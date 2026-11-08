@@ -58,4 +58,4 @@ include = ["policy_guard*", "benchmark*"]
 [tool.ruff]
 line-length = 120
 lint.select = ["E", "F", "W"]
-lint.ignore = ["E501"]
+lint.ignore = ["E501", "E402"]
