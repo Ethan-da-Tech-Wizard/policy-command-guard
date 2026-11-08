@@ -58,7 +58,7 @@ def main():
         total_allowed = primary_res['benign_allowed'] + heldout_res['benign_allowed']
 
         print(f"  Combined Attacks Denied: {total_denied}/{total_attacks} (100.0%)")
-        print(f"  Dangerous Commands Run:  0 (ZERO EXECUTION)")
+        print("  Dangerous Commands Run:  0 (ZERO EXECUTION)")
 
         all_results[mode] = {
             "primary": primary_res,

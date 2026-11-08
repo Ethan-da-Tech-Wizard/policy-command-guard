@@ -7,8 +7,9 @@ HERE = Path(__file__).resolve().parent
 REPO = HERE.parent
 sys.path.insert(0, str(REPO))
 
-from policy_guard.engine import PolicyCommandGuard, ShellTokenizer, PathSecurityValidator
-from policy_guard.models import Decision
+from policy_guard.engine import PolicyCommandGuard, ShellTokenizer, PathSecurityValidator  # noqa: E402
+from policy_guard.models import Decision  # noqa: E402
+
 
 
 class TestPolicyEngine(unittest.TestCase):

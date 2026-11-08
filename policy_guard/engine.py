@@ -5,12 +5,11 @@ dangerous pattern detection, path traversal prevention, and execution policy
 enforcement engine.
 """
 
-import json
 import os
 import re
 import shlex
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
+from typing import List, Optional, Sequence
 
 from .models import Decision, EvaluationResult, PolicyRule, PolicyTier
 
