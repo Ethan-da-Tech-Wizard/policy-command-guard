@@ -1,0 +1,953 @@
+# Ethan CLI shell policy for Gemini CLI (loaded with --policy by `ethan chat`).
+# YOLO auto-approves ordinary tools in the trusted coding session. Gemini's policy
+# launcher elevates a validated deny-only snapshot above caller user policies.
+# macOS strict-open permits workspace/tmp/cache/includes writes, broader system
+# and selected home reads, and outbound network. It is not workspace-only or
+# network-denying isolation. Upstream tainted-input checks can require review.
+# Keep irreversible/system-wide operations denied.
+#
+# 2026-11-01 REDESIGN: shell is ALLOWLIST-BY-DEFAULT.  The pre-existing deny list (kept below, unchanged, as defense in
+# depth and for its denyMessage text) let 94 of 145 independently crafted bypasses through.  The generated block near
+# the end of this file (scripts/ethan_policy_gen.py) denies every shell command that is not inside a strict grammar
+# (first word allowlisted; no substitution / redirection / chaining / globs / quote tricks; fixed git, python -c, sed,
+# awk, find, xargs, tar, pip grammars; workspace-only, unprotected, non-secret paths) and then allows, so the engine
+# re-checks each ' | ' / ' && ' sub-command.  File tools: workspace-relative paths only, protected files unwritable.
+# Regression: scripts/ethan_policy_bypass_suite.py (real PolicyEngine, user tier AND launcher admin-snapshot shape).
+# Revert: cp archive/2026-11-01/policy-allowlist/ethan_gemini_policy.before.toml scripts/ethan_gemini_policy.toml
+
+# --- allow: the Magi coordination actions Ethan asked to auto-approve ---
+# Keep the permission narrow. Other tools exposed by the same MCP server
+# cannot be selected by a plain `/magi` status request.
+[[rule]]
+mcpName = "magi"
+toolName = "magi_cluster_status"
+decision = "allow"
+priority = 800
+
+[[rule]]
+mcpName = "magi"
+toolName = "magi_inbox_poll"
+decision = "allow"
+priority = 800
+
+[[rule]]
+mcpName = "magi"
+toolName = "magi_dispatch_task"
+decision = "allow"
+priority = 800
+
+# --- hard deny: destructive, privileged, remote, or download-and-run ---
+# NOTE (2026-11-01 fix): Gemini CLI 0.65.0 turns each commandPrefix into the regex
+#   "command":"<prefix>  followed by (whitespace | quote)
+# so a prefix that itself ends in a space ("rm ", "su ", "nc ") can never match
+# "rm -rf x" and a prefix like "mv /" can never match "mv /etc/x". Prefixes below
+# therefore carry NO trailing whitespace. Anything that needs more than a start-of-
+# command match (wrappers, paths, chains, secrets) is an argsPattern regex further down.
+# Gemini rejects regexes where a quantified group follows another group's quantifier,
+# so those regexes use capturing groups with empty alternatives instead of (..)?.
+# Lint: scripts/test_ethan_gemini_policy.py
+[[rule]]
+toolName = "run_shell_command"
+commandPrefix = ["sudo", "su", "doas", "rm", "rmdir", "mkfs", "dd", "shred", "chmod -R", "chown -R",
+  "curl", "wget", "ssh", "scp", "rsync", "nc", "git push", "git reset", "git clean", "pacman", "yay",
+  "pip install", "npm install", "npm i", "systemctl", "shutdown", "reboot", "poweroff", "kill", "pkill", "killall",
+  "git add", "git commit", "git switch", "git checkout", "git merge", "git branch -d", "git branch -D",
+  "git stash", "git remote", "git worktree", "git cherry-pick", "git revert", "git update-ref",
+  "git commit-tree", "git config", "git init", "git clone", "git fetch", "git pull", "git rm",
+  "brew install", "brew upgrade", "brew uninstall", "pip3 install", "python3 -m pip",
+  "python -m pip", "npm update", "npm uninstall", "npx",
+  "launchctl", "osascript", "defaults write", "diskutil", "softwareupdate", "installer",
+  "python3 -m unittest discover -s scripts", ":(){"]
+decision = "deny"
+priority = 900
+denyMessage = "Blocked by the Ethan safety policy. Ask Ethan to run this himself if it is really needed."
+
+# --- hard deny: regex rules (command position, wrappers, absolute paths, chains, secrets) ---
+[[rule]]
+toolName = "run_shell_command"
+argsPattern = '("command":"|\\n|[;&(`{]|(?<!\{\x00"command":"[^\x27\\"]*\b(grep|egrep|fgrep|rg|ag|ack)( +-[^\s\x27\\"]+|)( +-[^\s\x27\\"]+|)( +-[^\s\x27\\"]+|)( +-[^\s\x27\\"]+|) +(-e +|)(\x27|\\")[^\s\x27\\"]+)\||\$\(|(\S*/|)(sh|bash|zsh|dash|ksh) +-\w*c +(\\"|\x27|))\s*(\w+=\S* |)(\w+=\S* |)(env |command |exec |nohup |setsid |time |nice |xargs |stdbuf |builtin |then |do |else |busybox |watch |parallel |unbuffer |chronic |timeout \S+ |timeout -\S+ \S+ |nice -n \S+ |nice -\S+ |ionice -c\S+ |ionice -c \S+ |flock \S+ |xargs -\S+ \S+ |xargs -\S+ |env -\S+ |env -\S+ \S+ |)(env |command |exec |nohup |setsid |time |nice |xargs |stdbuf |builtin |then |do |else |busybox |watch |parallel |unbuffer |chronic |timeout \S+ |timeout -\S+ \S+ |nice -n \S+ |nice -\S+ |ionice -c\S+ |ionice -c \S+ |flock \S+ |xargs -\S+ \S+ |xargs -\S+ |env -\S+ |env -\S+ \S+ |)(\w+=\S* |)([^\s;&|()`"]*/|\\\\|\\"|\x27|)(rm|rmdir|unlink|shred|truncate|dd|mkfs(\.\w+|)|wipefs|fdisk|sfdisk|parted|mkswap|chattr|srm|blkdiscard)(?=[\s;&|)`"\\\x27]|$)'
+decision = "deny"
+priority = 900
+denyMessage = "Blocked: destructive command. Ask Ethan to run this himself if it is really needed."
+
+[[rule]]
+toolName = "run_shell_command"
+argsPattern = '("command":"|\\n|[;&(`{]|(?<!\{\x00"command":"[^\x27\\"]*\b(grep|egrep|fgrep|rg|ag|ack)( +-[^\s\x27\\"]+|)( +-[^\s\x27\\"]+|)( +-[^\s\x27\\"]+|)( +-[^\s\x27\\"]+|) +(-e +|)(\x27|\\")[^\s\x27\\"]+)\||\$\(|(\S*/|)(sh|bash|zsh|dash|ksh) +-\w*c +(\\"|\x27|))\s*(\w+=\S* |)(\w+=\S* |)(env |command |exec |nohup |setsid |time |nice |xargs |stdbuf |builtin |then |do |else |busybox |watch |parallel |unbuffer |chronic |timeout \S+ |timeout -\S+ \S+ |nice -n \S+ |nice -\S+ |ionice -c\S+ |ionice -c \S+ |flock \S+ |xargs -\S+ \S+ |xargs -\S+ |env -\S+ |env -\S+ \S+ |)(env |command |exec |nohup |setsid |time |nice |xargs |stdbuf |builtin |then |do |else |busybox |watch |parallel |unbuffer |chronic |timeout \S+ |timeout -\S+ \S+ |nice -n \S+ |nice -\S+ |ionice -c\S+ |ionice -c \S+ |flock \S+ |xargs -\S+ \S+ |xargs -\S+ |env -\S+ |env -\S+ \S+ |)(\w+=\S* |)([^\s;&|()`"]*/|\\\\|\\"|\x27|)(sudo|sudoedit|su|doas|pkexec|run0|chroot|nsenter|unshare|setcap|newgrp|machinectl)(?=[\s;&|)`"\\\x27]|$)'
+decision = "deny"
+priority = 900
+denyMessage = "Blocked: privilege escalation. Ask Ethan to run this himself if it is really needed."
+
+[[rule]]
+toolName = "run_shell_command"
+argsPattern = '("command":"|\\n|[;&(`{]|(?<!\{\x00"command":"[^\x27\\"]*\b(grep|egrep|fgrep|rg|ag|ack)( +-[^\s\x27\\"]+|)( +-[^\s\x27\\"]+|)( +-[^\s\x27\\"]+|)( +-[^\s\x27\\"]+|) +(-e +|)(\x27|\\")[^\s\x27\\"]+)\||\$\(|(\S*/|)(sh|bash|zsh|dash|ksh) +-\w*c +(\\"|\x27|))\s*(\w+=\S* |)(\w+=\S* |)(env |command |exec |nohup |setsid |time |nice |xargs |stdbuf |builtin |then |do |else |busybox |watch |parallel |unbuffer |chronic |timeout \S+ |timeout -\S+ \S+ |nice -n \S+ |nice -\S+ |ionice -c\S+ |ionice -c \S+ |flock \S+ |xargs -\S+ \S+ |xargs -\S+ |env -\S+ |env -\S+ \S+ |)(env |command |exec |nohup |setsid |time |nice |xargs |stdbuf |builtin |then |do |else |busybox |watch |parallel |unbuffer |chronic |timeout \S+ |timeout -\S+ \S+ |nice -n \S+ |nice -\S+ |ionice -c\S+ |ionice -c \S+ |flock \S+ |xargs -\S+ \S+ |xargs -\S+ |env -\S+ |env -\S+ \S+ |)(\w+=\S* |)([^\s;&|()`"]*/|\\\\|\\"|\x27|)(curl|wget|ssh|scp|sftp|rsync|nc|ncat|netcat|socat|telnet|ftp|tftp|nmap|aria2c|lftp|mosh|sshfs)(?=[\s;&|)`"\\\x27]|$)'
+decision = "deny"
+priority = 900
+denyMessage = "Blocked: network/remote command. Ask Ethan to run this himself if it is really needed."
+
+[[rule]]
+toolName = "run_shell_command"
+argsPattern = '("command":"|\\n|[;&(`{]|(?<!\{\x00"command":"[^\x27\\"]*\b(grep|egrep|fgrep|rg|ag|ack)( +-[^\s\x27\\"]+|)( +-[^\s\x27\\"]+|)( +-[^\s\x27\\"]+|)( +-[^\s\x27\\"]+|) +(-e +|)(\x27|\\")[^\s\x27\\"]+)\||\$\(|(\S*/|)(sh|bash|zsh|dash|ksh) +-\w*c +(\\"|\x27|))\s*(\w+=\S* |)(\w+=\S* |)(env |command |exec |nohup |setsid |time |nice |xargs |stdbuf |builtin |then |do |else |busybox |watch |parallel |unbuffer |chronic |timeout \S+ |timeout -\S+ \S+ |nice -n \S+ |nice -\S+ |ionice -c\S+ |ionice -c \S+ |flock \S+ |xargs -\S+ \S+ |xargs -\S+ |env -\S+ |env -\S+ \S+ |)(env |command |exec |nohup |setsid |time |nice |xargs |stdbuf |builtin |then |do |else |busybox |watch |parallel |unbuffer |chronic |timeout \S+ |timeout -\S+ \S+ |nice -n \S+ |nice -\S+ |ionice -c\S+ |ionice -c \S+ |flock \S+ |xargs -\S+ \S+ |xargs -\S+ |env -\S+ |env -\S+ \S+ |)(\w+=\S* |)([^\s;&|()`"]*/|\\\\|\\"|\x27|)(systemctl|service|shutdown|reboot|poweroff|halt|telinit|kill|pkill|killall|skill|mount|umount|iptables|ip6tables|nft|ufw|crontab|at|batch|useradd|userdel|usermod|groupadd|passwd|chpasswd|visudo|modprobe|insmod|rmmod|sysctl|loginctl|launchctl|osascript|diskutil|softwareupdate|installer|xdg-open|dbus-send|busctl)(?=[\s;&|)`"\\\x27]|$)'
+decision = "deny"
+priority = 900
+denyMessage = "Blocked: system/process control command. Ask Ethan to run this himself if it is really needed."
+
+[[rule]]
+toolName = "run_shell_command"
+argsPattern = '("command":"|\\n|[;&(`{]|(?<!\{\x00"command":"[^\x27\\"]*\b(grep|egrep|fgrep|rg|ag|ack)( +-[^\s\x27\\"]+|)( +-[^\s\x27\\"]+|)( +-[^\s\x27\\"]+|)( +-[^\s\x27\\"]+|) +(-e +|)(\x27|\\")[^\s\x27\\"]+)\||\$\(|(\S*/|)(sh|bash|zsh|dash|ksh) +-\w*c +(\\"|\x27|))\s*(\w+=\S* |)(\w+=\S* |)(env |command |exec |nohup |setsid |time |nice |xargs |stdbuf |builtin |then |do |else |busybox |watch |parallel |unbuffer |chronic |timeout \S+ |timeout -\S+ \S+ |nice -n \S+ |nice -\S+ |ionice -c\S+ |ionice -c \S+ |flock \S+ |xargs -\S+ \S+ |xargs -\S+ |env -\S+ |env -\S+ \S+ |)(env |command |exec |nohup |setsid |time |nice |xargs |stdbuf |builtin |then |do |else |busybox |watch |parallel |unbuffer |chronic |timeout \S+ |timeout -\S+ \S+ |nice -n \S+ |nice -\S+ |ionice -c\S+ |ionice -c \S+ |flock \S+ |xargs -\S+ \S+ |xargs -\S+ |env -\S+ |env -\S+ \S+ |)(\w+=\S* |)([^\s;&|()`"]*/|\\\\|\\"|\x27|)(pacman|yay|paru|apt|apt-get|dpkg|dnf|yum|rpm|zypper|snap|flatpak|npx|pnpx|bunx|uvx|makepkg|eval|(perl|ruby|php|lua|node|nodejs|deno|bun|tclsh|awk|gawk) -e|(perl|ruby|php|lua|node|nodejs|deno|bun) --eval|python[0-9.]* -m (pip|ensurepip|http\.server|venv)|uv pip)(?=[\s;&|)`"\\\x27]|$)'
+decision = "deny"
+priority = 900
+denyMessage = "Blocked: package install or code execution wrapper. Ask Ethan to run this himself if it is really needed."
+
+[[rule]]
+toolName = "run_shell_command"
+argsPattern = '("command":"|\\n|[;&(`{]|(?<!\{\x00"command":"[^\x27\\"]*\b(grep|egrep|fgrep|rg|ag|ack)( +-[^\s\x27\\"]+|)( +-[^\s\x27\\"]+|)( +-[^\s\x27\\"]+|)( +-[^\s\x27\\"]+|) +(-e +|)(\x27|\\")[^\s\x27\\"]+)\||\$\(|(\S*/|)(sh|bash|zsh|dash|ksh) +-\w*c +(\\"|\x27|))\s*(\w+=\S* |)(\w+=\S* |)(env |command |exec |nohup |setsid |time |nice |xargs |stdbuf |builtin |then |do |else |busybox |watch |parallel |unbuffer |chronic |timeout \S+ |timeout -\S+ \S+ |nice -n \S+ |nice -\S+ |ionice -c\S+ |ionice -c \S+ |flock \S+ |xargs -\S+ \S+ |xargs -\S+ |env -\S+ |env -\S+ \S+ |)(env |command |exec |nohup |setsid |time |nice |xargs |stdbuf |builtin |then |do |else |busybox |watch |parallel |unbuffer |chronic |timeout \S+ |timeout -\S+ \S+ |nice -n \S+ |nice -\S+ |ionice -c\S+ |ionice -c \S+ |flock \S+ |xargs -\S+ \S+ |xargs -\S+ |env -\S+ |env -\S+ \S+ |)(\w+=\S* |)([^\s;&|()`"]*/|\\\\|\\"|\x27|)(pip[0-9.]*|pipx|npm|yarn|pnpm|gem|cargo|brew|go|uv|bun|deno) (install|i|add|update|upgrade|uninstall|remove|publish|get|tool)(?=[\s;&|)`"\\\x27]|$)'
+decision = "deny"
+priority = 900
+denyMessage = "Blocked: package install. Ask Ethan to run this himself if it is really needed."
+
+[[rule]]
+toolName = "run_shell_command"
+argsPattern = '("command":"|\\n|[;&(`{]|(?<!\{\x00"command":"[^\x27\\"]*\b(grep|egrep|fgrep|rg|ag|ack)( +-[^\s\x27\\"]+|)( +-[^\s\x27\\"]+|)( +-[^\s\x27\\"]+|)( +-[^\s\x27\\"]+|) +(-e +|)(\x27|\\")[^\s\x27\\"]+)\||\$\(|(\S*/|)(sh|bash|zsh|dash|ksh) +-\w*c +(\\"|\x27|))\s*(\w+=\S* |)(\w+=\S* |)(env |command |exec |nohup |setsid |time |nice |xargs |stdbuf |builtin |then |do |else |busybox |watch |parallel |unbuffer |chronic |timeout \S+ |timeout -\S+ \S+ |nice -n \S+ |nice -\S+ |ionice -c\S+ |ionice -c \S+ |flock \S+ |xargs -\S+ \S+ |xargs -\S+ |env -\S+ |env -\S+ \S+ |)(env |command |exec |nohup |setsid |time |nice |xargs |stdbuf |builtin |then |do |else |busybox |watch |parallel |unbuffer |chronic |timeout \S+ |timeout -\S+ \S+ |nice -n \S+ |nice -\S+ |ionice -c\S+ |ionice -c \S+ |flock \S+ |xargs -\S+ \S+ |xargs -\S+ |env -\S+ |env -\S+ \S+ |)(\w+=\S* |)([^\s;&|()`"]*/|\\\\|\\"|\x27|)defaults (write|delete)(?=[\s;&|)`"\\\x27]|$)'
+decision = "deny"
+priority = 900
+denyMessage = "Blocked by the Ethan safety policy. Ask Ethan to run this himself if it is really needed."
+
+[[rule]]
+toolName = "run_shell_command"
+argsPattern = '("command":"|\\n|[;&(`{]|(?<!\{\x00"command":"[^\x27\\"]*\b(grep|egrep|fgrep|rg|ag|ack)( +-[^\s\x27\\"]+|)( +-[^\s\x27\\"]+|)( +-[^\s\x27\\"]+|)( +-[^\s\x27\\"]+|) +(-e +|)(\x27|\\")[^\s\x27\\"]+)\||\$\(|(\S*/|)(sh|bash|zsh|dash|ksh) +-\w*c +(\\"|\x27|))\s*(\w+=\S* |)(\w+=\S* |)(env |command |exec |nohup |setsid |time |nice |xargs |stdbuf |builtin |then |do |else |busybox |watch |parallel |unbuffer |chronic |timeout \S+ |timeout -\S+ \S+ |nice -n \S+ |nice -\S+ |ionice -c\S+ |ionice -c \S+ |flock \S+ |xargs -\S+ \S+ |xargs -\S+ |env -\S+ |env -\S+ \S+ |)(env |command |exec |nohup |setsid |time |nice |xargs |stdbuf |builtin |then |do |else |busybox |watch |parallel |unbuffer |chronic |timeout \S+ |timeout -\S+ \S+ |nice -n \S+ |nice -\S+ |ionice -c\S+ |ionice -c \S+ |flock \S+ |xargs -\S+ \S+ |xargs -\S+ |env -\S+ |env -\S+ \S+ |)(\w+=\S* |)([^\s;&|()`"]*/|\\\\|\\"|\x27|)git (-\S+ \S+ |--\S+ |)(-\S+ \S+ |--\S+ |)(push|reset|clean|add|commit|switch|checkout|merge|branch -d|branch -D|stash|remote|worktree|cherry-pick|revert|update-ref|commit-tree|config|init|clone|fetch|pull|rm|rebase|tag -d|gc|prune|filter-branch|restore|am|apply|submodule|lfs|hash-object|write-tree|symbolic-ref|mv)(?=[\s;&|)`"\\\x27]|$)'
+decision = "deny"
+priority = 900
+denyMessage = "Blocked: this git command changes the repository. Use the ethan git guard commands instead."
+
+[[rule]]
+toolName = "run_shell_command"
+argsPattern = '(?<!\{\x00"command":"[^\x27\\"]*\b(grep|egrep|fgrep|rg|ag|ack)( +-[^\s\x27\\"]+|)( +-[^\s\x27\\"]+|)( +-[^\s\x27\\"]+|)( +-[^\s\x27\\"]+|) +(-e +|)(\x27|\\")[^\s\x27\\"]+)\|\s*(sudo |)([^\s;&|]*/|)(sh|bash|zsh|dash|ksh|python[0-9.]*|perl|ruby|node)(?=[\s;&|)`"\\\x27]|$)'
+decision = "deny"
+priority = 900
+denyMessage = "Blocked: piping into a shell/interpreter. Ask Ethan to run this himself if it is really needed."
+
+[[rule]]
+toolName = "run_shell_command"
+argsPattern = '("command":"|\\n|[;&(`{]|(?<!\{\x00"command":"[^\x27\\"]*\b(grep|egrep|fgrep|rg|ag|ack)( +-[^\s\x27\\"]+|)( +-[^\s\x27\\"]+|)( +-[^\s\x27\\"]+|)( +-[^\s\x27\\"]+|) +(-e +|)(\x27|\\")[^\s\x27\\"]+)\||\$\(|(\S*/|)(sh|bash|zsh|dash|ksh) +-\w*c +(\\"|\x27|))\s*(\w+=\S* |)(\w+=\S* |)(env |command |exec |nohup |setsid |time |nice |xargs |stdbuf |builtin |then |do |else |busybox |watch |parallel |unbuffer |chronic |timeout \S+ |timeout -\S+ \S+ |nice -n \S+ |nice -\S+ |ionice -c\S+ |ionice -c \S+ |flock \S+ |xargs -\S+ \S+ |xargs -\S+ |env -\S+ |env -\S+ \S+ |)(env |command |exec |nohup |setsid |time |nice |xargs |stdbuf |builtin |then |do |else |busybox |watch |parallel |unbuffer |chronic |timeout \S+ |timeout -\S+ \S+ |nice -n \S+ |nice -\S+ |ionice -c\S+ |ionice -c \S+ |flock \S+ |xargs -\S+ \S+ |xargs -\S+ |env -\S+ |env -\S+ \S+ |)(\w+=\S* |)([^\s;&|()`"]*/|\\\\|\\"|\x27|)mv (-\S+ )(-\S+ |)(/|~|\$HOME)|("command":"|\\n|[;&(`{]|(?<!\{\x00"command":"[^\x27\\"]*\b(grep|egrep|fgrep|rg|ag|ack)( +-[^\s\x27\\"]+|)( +-[^\s\x27\\"]+|)( +-[^\s\x27\\"]+|)( +-[^\s\x27\\"]+|) +(-e +|)(\x27|\\")[^\s\x27\\"]+)\||\$\(|(\S*/|)(sh|bash|zsh|dash|ksh) +-\w*c +(\\"|\x27|))\s*(\w+=\S* |)(\w+=\S* |)(env |command |exec |nohup |setsid |time |nice |xargs |stdbuf |builtin |then |do |else |busybox |watch |parallel |unbuffer |chronic |timeout \S+ |timeout -\S+ \S+ |nice -n \S+ |nice -\S+ |ionice -c\S+ |ionice -c \S+ |flock \S+ |xargs -\S+ \S+ |xargs -\S+ |env -\S+ |env -\S+ \S+ |)(env |command |exec |nohup |setsid |time |nice |xargs |stdbuf |builtin |then |do |else |busybox |watch |parallel |unbuffer |chronic |timeout \S+ |timeout -\S+ \S+ |nice -n \S+ |nice -\S+ |ionice -c\S+ |ionice -c \S+ |flock \S+ |xargs -\S+ \S+ |xargs -\S+ |env -\S+ |env -\S+ \S+ |)(\w+=\S* |)([^\s;&|()`"]*/|\\\\|\\"|\x27|)mv (/|~|\$HOME)'
+decision = "deny"
+priority = 900
+denyMessage = "Blocked: mv from a system or home path. Ask Ethan to run this himself if it is really needed."
+
+[[rule]]
+toolName = "run_shell_command"
+argsPattern = '("command":"|\\n|[;&(`{]|(?<!\{\x00"command":"[^\x27\\"]*\b(grep|egrep|fgrep|rg|ag|ack)( +-[^\s\x27\\"]+|)( +-[^\s\x27\\"]+|)( +-[^\s\x27\\"]+|)( +-[^\s\x27\\"]+|) +(-e +|)(\x27|\\")[^\s\x27\\"]+)\||\$\(|(\S*/|)(sh|bash|zsh|dash|ksh) +-\w*c +(\\"|\x27|))\s*(\w+=\S* |)(\w+=\S* |)(env |command |exec |nohup |setsid |time |nice |xargs |stdbuf |builtin |then |do |else |busybox |watch |parallel |unbuffer |chronic |timeout \S+ |timeout -\S+ \S+ |nice -n \S+ |nice -\S+ |ionice -c\S+ |ionice -c \S+ |flock \S+ |xargs -\S+ \S+ |xargs -\S+ |env -\S+ |env -\S+ \S+ |)(env |command |exec |nohup |setsid |time |nice |xargs |stdbuf |builtin |then |do |else |busybox |watch |parallel |unbuffer |chronic |timeout \S+ |timeout -\S+ \S+ |nice -n \S+ |nice -\S+ |ionice -c\S+ |ionice -c \S+ |flock \S+ |xargs -\S+ \S+ |xargs -\S+ |env -\S+ |env -\S+ \S+ |)(\w+=\S* |)([^\s;&|()`"]*/|\\\\|\\"|\x27|)cp (-\S*[rRa]\S* )(-\S+ |)(/|~|\$HOME)|("command":"|\\n|[;&(`{]|(?<!\{\x00"command":"[^\x27\\"]*\b(grep|egrep|fgrep|rg|ag|ack)( +-[^\s\x27\\"]+|)( +-[^\s\x27\\"]+|)( +-[^\s\x27\\"]+|)( +-[^\s\x27\\"]+|) +(-e +|)(\x27|\\")[^\s\x27\\"]+)\||\$\(|(\S*/|)(sh|bash|zsh|dash|ksh) +-\w*c +(\\"|\x27|))\s*(\w+=\S* |)(\w+=\S* |)(env |command |exec |nohup |setsid |time |nice |xargs |stdbuf |builtin |then |do |else |busybox |watch |parallel |unbuffer |chronic |timeout \S+ |timeout -\S+ \S+ |nice -n \S+ |nice -\S+ |ionice -c\S+ |ionice -c \S+ |flock \S+ |xargs -\S+ \S+ |xargs -\S+ |env -\S+ |env -\S+ \S+ |)(env |command |exec |nohup |setsid |time |nice |xargs |stdbuf |builtin |then |do |else |busybox |watch |parallel |unbuffer |chronic |timeout \S+ |timeout -\S+ \S+ |nice -n \S+ |nice -\S+ |ionice -c\S+ |ionice -c \S+ |flock \S+ |xargs -\S+ \S+ |xargs -\S+ |env -\S+ |env -\S+ \S+ |)(\w+=\S* |)([^\s;&|()`"]*/|\\\\|\\"|\x27|)cp (-\S+ |)(-\S*[rRa]\S* )(-\S+ |)(/|~|\$HOME)'
+decision = "deny"
+priority = 900
+denyMessage = "Blocked: recursive copy from a system or home path. Ask Ethan to run this himself if it is really needed."
+
+[[rule]]
+toolName = "run_shell_command"
+argsPattern = '("command":"|\\n|[;&(`{]|(?<!\{\x00"command":"[^\x27\\"]*\b(grep|egrep|fgrep|rg|ag|ack)( +-[^\s\x27\\"]+|)( +-[^\s\x27\\"]+|)( +-[^\s\x27\\"]+|)( +-[^\s\x27\\"]+|) +(-e +|)(\x27|\\")[^\s\x27\\"]+)\||\$\(|(\S*/|)(sh|bash|zsh|dash|ksh) +-\w*c +(\\"|\x27|))\s*(\w+=\S* |)(\w+=\S* |)(env |command |exec |nohup |setsid |time |nice |xargs |stdbuf |builtin |then |do |else |busybox |watch |parallel |unbuffer |chronic |timeout \S+ |timeout -\S+ \S+ |nice -n \S+ |nice -\S+ |ionice -c\S+ |ionice -c \S+ |flock \S+ |xargs -\S+ \S+ |xargs -\S+ |env -\S+ |env -\S+ \S+ |)(env |command |exec |nohup |setsid |time |nice |xargs |stdbuf |builtin |then |do |else |busybox |watch |parallel |unbuffer |chronic |timeout \S+ |timeout -\S+ \S+ |nice -n \S+ |nice -\S+ |ionice -c\S+ |ionice -c \S+ |flock \S+ |xargs -\S+ \S+ |xargs -\S+ |env -\S+ |env -\S+ \S+ |)(\w+=\S* |)([^\s;&|()`"]*/|\\\\|\\"|\x27|)find [^;&|]*\s-(delete|exec|execdir|ok|okdir|fprint|fprintf|fls)(?=[\s;&|)`"\\\x27]|$)'
+decision = "deny"
+priority = 900
+denyMessage = "Blocked: find with -delete/-exec. Ask Ethan to run this himself if it is really needed."
+
+[[rule]]
+toolName = "run_shell_command"
+argsPattern = '("command":"|\\n|[;&(`{]|(?<!\{\x00"command":"[^\x27\\"]*\b(grep|egrep|fgrep|rg|ag|ack)( +-[^\s\x27\\"]+|)( +-[^\s\x27\\"]+|)( +-[^\s\x27\\"]+|)( +-[^\s\x27\\"]+|) +(-e +|)(\x27|\\")[^\s\x27\\"]+)\||\$\(|(\S*/|)(sh|bash|zsh|dash|ksh) +-\w*c +(\\"|\x27|))\s*(\w+=\S* |)(\w+=\S* |)(env |command |exec |nohup |setsid |time |nice |xargs |stdbuf |builtin |then |do |else |busybox |watch |parallel |unbuffer |chronic |timeout \S+ |timeout -\S+ \S+ |nice -n \S+ |nice -\S+ |ionice -c\S+ |ionice -c \S+ |flock \S+ |xargs -\S+ \S+ |xargs -\S+ |env -\S+ |env -\S+ \S+ |)(env |command |exec |nohup |setsid |time |nice |xargs |stdbuf |builtin |then |do |else |busybox |watch |parallel |unbuffer |chronic |timeout \S+ |timeout -\S+ \S+ |nice -n \S+ |nice -\S+ |ionice -c\S+ |ionice -c \S+ |flock \S+ |xargs -\S+ \S+ |xargs -\S+ |env -\S+ |env -\S+ \S+ |)(\w+=\S* |)([^\s;&|()`"]*/|\\\\|\\"|\x27|)python[0-9.]* +(-\S*c|- |<<).*(os\.(system|popen|remove|unlink|rmdir|removedirs|exec|spawn|kill|chmod|chown)|subprocess|shutil|socket|urllib|requests|http|ctypes|pty|__import__|(?<!literal_)eval|exec|(?<!re\.)compile|open ?\([^)]*,\s*(mode *= *|)\\*[\x27"]\\*"?[rbtU]*[wax+][rbtU+]*\\*[\x27"]|open ?\([^()]*\([^()]*\)[^)]*,\s*(mode *= *|)\\*[\x27"]\\*"?[rbtU]*[wax+][rbtU+]*\\*[\x27"]|\.open ?\(\s*\\*[\x27"]\\*"?[rbtU]*[wax+][rbtU+]*\\*[\x27"]|\.(write_text|write_bytes|unlink|rmdir|rename|touch|symlink_to|hardlink_to|chmod)\(|\bos\.(rename|replace|mkdir|makedirs|symlink|link|truncate|fdopen|open|write)\()'
+decision = "deny"
+priority = 900
+denyMessage = "Blocked: python -c / stdin script with process, file-write or network access. Put the code in a script file in the workspace."
+
+[[rule]]
+toolName = "run_shell_command"
+argsPattern = '("command":"|\\n|[;&(`{]|(?<!\{\x00"command":"[^\x27\\"]*\b(grep|egrep|fgrep|rg|ag|ack)( +-[^\s\x27\\"]+|)( +-[^\s\x27\\"]+|)( +-[^\s\x27\\"]+|)( +-[^\s\x27\\"]+|) +(-e +|)(\x27|\\")[^\s\x27\\"]+)\||\$\(|(\S*/|)(sh|bash|zsh|dash|ksh) +-\w*c +(\\"|\x27|))\s*(\w+=\S* |)(\w+=\S* |)(env |command |exec |nohup |setsid |time |nice |xargs |stdbuf |builtin |then |do |else |busybox |watch |parallel |unbuffer |chronic |timeout \S+ |timeout -\S+ \S+ |nice -n \S+ |nice -\S+ |ionice -c\S+ |ionice -c \S+ |flock \S+ |xargs -\S+ \S+ |xargs -\S+ |env -\S+ |env -\S+ \S+ |)(env |command |exec |nohup |setsid |time |nice |xargs |stdbuf |builtin |then |do |else |busybox |watch |parallel |unbuffer |chronic |timeout \S+ |timeout -\S+ \S+ |nice -n \S+ |nice -\S+ |ionice -c\S+ |ionice -c \S+ |flock \S+ |xargs -\S+ \S+ |xargs -\S+ |env -\S+ |env -\S+ \S+ |)(\w+=\S* |)([^\s;&|()`"]*/|\\\\|\\"|\x27|)python[0-9.]* +<<.*(os\.(system|popen|remove|unlink|rmdir|removedirs|exec|spawn|kill|chmod|chown)|subprocess|shutil|socket|urllib|requests|ctypes|__import__|eval|exec)'
+decision = "deny"
+priority = 900
+denyMessage = "Blocked: python heredoc with process or file access. Ask Ethan to run this himself if it is really needed."
+
+[[rule]]
+toolName = "run_shell_command"
+argsPattern = '("command":"|\\n|[;&(`{]|(?<!\{\x00"command":"[^\x27\\"]*\b(grep|egrep|fgrep|rg|ag|ack)( +-[^\s\x27\\"]+|)( +-[^\s\x27\\"]+|)( +-[^\s\x27\\"]+|)( +-[^\s\x27\\"]+|) +(-e +|)(\x27|\\")[^\s\x27\\"]+)\||\$\(|(\S*/|)(sh|bash|zsh|dash|ksh) +-\w*c +(\\"|\x27|))\s*(\w+=\S* |)(\w+=\S* |)(env |command |exec |nohup |setsid |time |nice |xargs |stdbuf |builtin |then |do |else |busybox |watch |parallel |unbuffer |chronic |timeout \S+ |timeout -\S+ \S+ |nice -n \S+ |nice -\S+ |ionice -c\S+ |ionice -c \S+ |flock \S+ |xargs -\S+ \S+ |xargs -\S+ |env -\S+ |env -\S+ \S+ |)(env |command |exec |nohup |setsid |time |nice |xargs |stdbuf |builtin |then |do |else |busybox |watch |parallel |unbuffer |chronic |timeout \S+ |timeout -\S+ \S+ |nice -n \S+ |nice -\S+ |ionice -c\S+ |ionice -c \S+ |flock \S+ |xargs -\S+ \S+ |xargs -\S+ |env -\S+ |env -\S+ \S+ |)(\w+=\S* |)([^\s;&|()`"]*/|\\\\|\\"|\x27|)(g|m|n|)awk .*(system|getline|\| *\\")'
+decision = "deny"
+priority = 900
+denyMessage = "Blocked: awk that can spawn commands. Ask Ethan to run this himself if it is really needed."
+
+[[rule]]
+toolName = "run_shell_command"
+argsPattern = '("command":"|\\n|[;&(`{]|(?<!\{\x00"command":"[^\x27\\"]*\b(grep|egrep|fgrep|rg|ag|ack)( +-[^\s\x27\\"]+|)( +-[^\s\x27\\"]+|)( +-[^\s\x27\\"]+|)( +-[^\s\x27\\"]+|) +(-e +|)(\x27|\\")[^\s\x27\\"]+)\||\$\(|(\S*/|)(sh|bash|zsh|dash|ksh) +-\w*c +(\\"|\x27|))\s*(\w+=\S* |)(\w+=\S* |)(env |command |exec |nohup |setsid |time |nice |xargs |stdbuf |builtin |then |do |else |busybox |watch |parallel |unbuffer |chronic |timeout \S+ |timeout -\S+ \S+ |nice -n \S+ |nice -\S+ |ionice -c\S+ |ionice -c \S+ |flock \S+ |xargs -\S+ \S+ |xargs -\S+ |env -\S+ |env -\S+ \S+ |)(env |command |exec |nohup |setsid |time |nice |xargs |stdbuf |builtin |then |do |else |busybox |watch |parallel |unbuffer |chronic |timeout \S+ |timeout -\S+ \S+ |nice -n \S+ |nice -\S+ |ionice -c\S+ |ionice -c \S+ |flock \S+ |xargs -\S+ \S+ |xargs -\S+ |env -\S+ |env -\S+ \S+ |)(\w+=\S* |)([^\s;&|()`"]*/|\\\\|\\"|\x27|)\$'
+decision = "deny"
+priority = 900
+denyMessage = "Blocked: a variable or substitution used as the command name cannot be checked. Write the command name literally."
+
+[[rule]]
+toolName = "run_shell_command"
+argsPattern = '\w(\x27\x27|\\"\\")\w'
+decision = "deny"
+priority = 900
+denyMessage = "Blocked: quote-spliced command words cannot be checked."
+
+[[rule]]
+toolName = ["run_shell_command", "write_file", "replace"]
+argsPattern = '(~|\$HOME|\$\{HOME\}|/home/[^/\s"]+|/root)/\.(bashrc|bash_profile|bash_login|bash_logout|profile|zshrc|zprofile|zshenv|zlogin|xinitrc|xprofile|pam_environment|config/(autostart|systemd|fish)|local/share/(applications|systemd))'
+decision = "deny"
+priority = 900
+denyMessage = "Blocked: shell startup/autostart files. Ask Ethan to run this himself if it is really needed."
+
+[[rule]]
+toolName = "run_shell_command"
+argsPattern = '(~|\$HOME|\$\{HOME\}|/home/[^/\s"]+|/root)/\.[^\s/"]*[*?\[{]'
+decision = "deny"
+priority = 900
+denyMessage = "Blocked: glob over home dotfiles can reach secrets. Ask Ethan to run this himself if it is really needed."
+
+[[rule]]
+toolName = "run_shell_command"
+argsPattern = '(>|tee |tee -a |install |ln -s |ln -sf )\s*(~|\$HOME|\$\{HOME\}|/etc/|/usr/|/bin/|/sbin/|/lib|/boot/|/root|/var/(spool|lib)|/opt/|/home/[^/\s]+/\.)'
+decision = "deny"
+priority = 900
+denyMessage = "Blocked: writing outside the workspace into home dotfiles or system paths. Ask Ethan to run this himself if it is really needed."
+
+[[rule]]
+toolName = ["run_shell_command", "read_file", "read_many_files", "list_directory", "glob", "search_file_content", "grep_search", "write_file", "replace"]
+argsPattern = '(/etc/(shadow|gshadow|sudoers|master\.passwd|ssh/)|\.ssh(/|\\|"|\s|$)|id_(rsa|ed25519|ecdsa|dsa)|\.aws(/|\\|"|\s|$)|\.gnupg|\.netrc|\.(bash|zsh)_history|\.git-credentials|\.config/(gcloud|gh/hosts)|\.kube/config|\.docker/config|\.npmrc|\.pypirc|\.gemini/(oauth|google_accounts|installation_id|mcp-oauth)|\.claude/\.credentials|\.claude\.json|/proc/[^/]+/(environ|mem|maps)|/dev/(sd|nvme|mem|kmem|disk)|(^|/)\.env(\\|"|\s|$)|\.pem(\\|"|\s|$)|\.p12|\.keystore)'
+decision = "deny"
+priority = 900
+denyMessage = "Blocked: this path holds credentials or secrets. Ask Ethan to run this himself if it is really needed."
+
+[[rule]]
+toolName = ["write_file", "replace"]
+argsPattern = '"file_path":"(~|\$HOME|/etc/|/usr/|/bin/|/sbin/|/lib|/boot/|/root|/var/(spool|lib)|/opt/|/home/[^/"]+/\.)'
+decision = "deny"
+priority = 900
+denyMessage = "Blocked: writing outside the workspace. Write only inside the workspace."
+
+
+# --- shell ALLOWLIST (2026-11-01 redesign) ---
+# The deny list above was provably incomplete (independent verifier: 94 of 145 bypass attempts allowed).  Shell is now
+# allowlist-by-default: the generated block below denies every command that is not inside a strict grammar and then
+# allows (so the engine re-checks each pipe/&& sub-command).  The older deny rules above stay as defense in depth and
+# because their denyMessage text is embedded in refusal training rows.  Edit scripts/ethan_policy_gen.py, not the block.
+# BEGIN GENERATED ALLOWLIST (scripts/ethan_policy_gen.py) - do not edit by hand
+# Primary control: deny-only negative lookaheads (see scripts/ethan_policy_gen.py docstring).
+# Guarded git commands the grammar allows: "ethan git status" "ethan git begin" "ethan git stage" "ethan git verify" "ethan git finish" "ethan git undo-last"
+
+# args must start with the command key (extra keys sorted before it would hide it from the anchored rules)
+[[rule]]
+toolName = ["run_shell_command", "ShellTool"]
+argsPattern = '^(?!\{\x00"command":")'
+decision = "deny"
+priority = 900
+denyMessage = "Blocked: malformed shell call."
+
+# first word must be an allowlisted read-only/workspace command
+[[rule]]
+toolName = ["run_shell_command", "ShellTool"]
+argsPattern = '^\{\x00"command":"(?!(?:(?:env |)(?:FOO|BAR|BAZ|LC_ALL|LANG|TZ|NO_COLOR|CI|PYTHONDONTWRITEBYTECODE|PYTHONUNBUFFERED)=[A-Za-z0-9_.-]* |)(?:ls|cat|head|tail|wc|tree|stat|file|pwd|echo|printf|sort|uniq|cut|tr|nl|diff|cmp|du|df|ps|date|whoami|uname|which|basename|dirname|realpath|sha256sum|md5sum|seq|sleep|true|false|nproc|free|uptime|grep|egrep|fgrep|rg|find|jq|tar|git|python3|pip|pip3|node|ethan|sed|awk|xargs|cd|mkdir|touch|cp|mv|chmod|pytest|make|npm|nvidia-smi|scripts/ethan_capped_run\.sh)(?: |"))'
+decision = "deny"
+priority = 900
+denyMessage = "Blocked: this command is not on the Ethan allowlist (read-only inspection, git read commands, workspace build/test). Use read_file/write_file/replace, or ask Ethan to run it himself."
+
+# every command after a pipe or && must also be allowlisted
+[[rule]]
+toolName = ["run_shell_command", "ShellTool"]
+argsPattern = '(?:\| |&& )(?!(?:(?:env |)(?:FOO|BAR|BAZ|LC_ALL|LANG|TZ|NO_COLOR|CI|PYTHONDONTWRITEBYTECODE|PYTHONUNBUFFERED)=[A-Za-z0-9_.-]* |)(?:ls|cat|head|tail|wc|tree|stat|file|pwd|echo|printf|sort|uniq|cut|tr|nl|diff|cmp|du|df|ps|date|whoami|uname|which|basename|dirname|realpath|sha256sum|md5sum|seq|sleep|true|false|nproc|free|uptime|grep|egrep|fgrep|rg|find|jq|tar|git|python3|pip|pip3|node|ethan|sed|awk|xargs|cd|mkdir|touch|cp|mv|chmod|pytest|make|npm|nvidia-smi|scripts/ethan_capped_run\.sh)(?: |"))'
+decision = "deny"
+priority = 900
+denyMessage = "Blocked: this command is not on the Ethan allowlist (read-only inspection, git read commands, workspace build/test). Use read_file/write_file/replace, or ask Ethan to run it himself."
+
+# dir_path (working directory) must be inside the workspace
+[[rule]]
+toolName = ["run_shell_command", "ShellTool"]
+argsPattern = '\x00"dir_path":"(?!(?:/(?:(?:home/[^/ \"\x27\\]+/workspace|Users/[^/ \"\x27\\]+/workspace)|(?:tmp|private/tmp|var/folders|private/var/folders))(?:/|")|[A-Za-z0-9_.][^"\\]*"))'
+decision = "deny"
+priority = 900
+denyMessage = "Blocked: the working directory must be inside the workspace."
+
+# dir_path traversal
+[[rule]]
+toolName = ["run_shell_command", "ShellTool"]
+argsPattern = '\x00"dir_path":"[^\x00]*(?<![A-Za-z0-9_~^])\.\.(?![A-Za-z0-9_.])'
+decision = "deny"
+priority = 900
+denyMessage = "Blocked: '..' path traversal. Use paths inside the workspace."
+
+# command longer than 6000 characters
+[[rule]]
+toolName = ["run_shell_command", "ShellTool"]
+argsPattern = '^\{\x00"command":"[^\x00]{6000}'
+decision = "deny"
+priority = 900
+denyMessage = "Blocked: command too long to check. Put the work in a script file in the workspace."
+
+# shell metacharacters outside quotes (substitution, redirection, chaining, globs, unbalanced quotes) are denied; only ' | ', ' && ', 2>&1, >/dev/null and a final '> relative-file' are structural
+[[rule]]
+toolName = ["run_shell_command", "ShellTool"]
+argsPattern = '^\{\x00"command":"(?!python3 -c )[^\x27\"\\\x00]*(?:\x27[^\x27\x00]*\x27[^\x27\"\\\x00]*|\\\"[^\\\"\x00]*\\\"[^\x27\"\\\x00]*|)(?:\x27[^\x27\x00]*\x27[^\x27\"\\\x00]*|\\\"[^\\\"\x00]*\\\"[^\x27\"\\\x00]*|)(?:\x27[^\x27\x00]*\x27[^\x27\"\\\x00]*|\\\"[^\\\"\x00]*\\\"[^\x27\"\\\x00]*|)(?:\x27[^\x27\x00]*\x27[^\x27\"\\\x00]*|\\\"[^\\\"\x00]*\\\"[^\x27\"\\\x00]*|)(?:\x27[^\x27\x00]*\x27[^\x27\"\\\x00]*|\\\"[^\\\"\x00]*\\\"[^\x27\"\\\x00]*|)(?:\x27[^\x27\x00]*\x27[^\x27\"\\\x00]*|\\\"[^\\\"\x00]*\\\"[^\x27\"\\\x00]*|)(?:[;{}()`!<\x7f]|\\(?!\")|\$(?!HOME(?:/workspace|[ \"])|(?:USER|PWD)[ \"/])|\>(?!&[12]|/dev/null|>? ?[A-Za-z0-9_][A-Za-z0-9_./+-]*\"\x00)|(?<! )\||\|(?! )|(?<![ &>])&|(?<![&>])&(?!& )|(?<![A-Za-z0-9_)\]])~(?!/workspace[/ \"])|(?<![^ ])#|[?\[\]]|\*(?!\.(?:py|md|txt|json|jsonl|toml|csv|tsv|log|sh|js|ts|html|css|yaml|yml|cfg|ini|c|h|cpp|rs|go|java|rb|xml|rst|ipynb)(?:[ \"]|\x27))|\x27(?![^\x27\x00]*\x27)|\\\"(?![^\\\"\x00]*\\\")|\\\"[^\\\"\x00]*[$`]|(?<=[ =])(?:\x27(?=/(?:etc|root|home|var|usr|proc|sys|dev|opt|mnt|boot|bin|sbin|lib|lib64|srv|media|run|Users|Library|System|private|Volumes)(?:/|[ \"\x27\\]))|\\\"(?=/(?:etc|root|home|var|usr|proc|sys|dev|opt|mnt|boot|bin|sbin|lib|lib64|srv|media|run|Users|Library|System|private|Volumes)(?:/|[ \"\x27\\]))|)/(?!(?:(?:home/[^/ \"\x27\\]+/workspace|Users/[^/ \"\x27\\]+/workspace)|tmp|private/tmp|var/folders|private/var/folders|mnt/GameDrive/twu_scratch)(?:[/ \"\x27\\]|$)|etc(?:/(?:os-release|hostname|lsb-release)|)[ \"\x27\\]|proc/(?:cpuinfo|meminfo|loadavg|version|uptime)[ \"\x27\\]|dev/null[ \"\x27\\]))'
+decision = "deny"
+priority = 900
+denyMessage = "Blocked: shell syntax that cannot be checked (substitution, subshell, redirection, ';', glob, unbalanced quote, etc.). Use one plain command, optionally joined with ' | ' or ' && '."
+
+# more than six quoted pieces cannot be scanned
+[[rule]]
+toolName = ["run_shell_command", "ShellTool"]
+argsPattern = '^\{\x00"command":"(?!python3 -c )[^\x27\"\\\x00]*(?:\x27[^\x27\x00]*\x27[^\x27\"\\\x00]*|\\\"[^\\\"\x00]*\\\"[^\x27\"\\\x00]*)(?:\x27[^\x27\x00]*\x27[^\x27\"\\\x00]*|\\\"[^\\\"\x00]*\\\"[^\x27\"\\\x00]*)(?:\x27[^\x27\x00]*\x27[^\x27\"\\\x00]*|\\\"[^\\\"\x00]*\\\"[^\x27\"\\\x00]*)(?:\x27[^\x27\x00]*\x27[^\x27\"\\\x00]*|\\\"[^\\\"\x00]*\\\"[^\x27\"\\\x00]*)(?:\x27[^\x27\x00]*\x27[^\x27\"\\\x00]*|\\\"[^\\\"\x00]*\\\"[^\x27\"\\\x00]*)(?:\x27[^\x27\x00]*\x27[^\x27\"\\\x00]*|\\\"[^\\\"\x00]*\\\"[^\x27\"\\\x00]*)(?:\x27|\\\")'
+decision = "deny"
+priority = 900
+denyMessage = "Blocked: too many quoted pieces to check. Simplify the command."
+
+# parent-directory traversal
+[[rule]]
+toolName = ["run_shell_command", "ShellTool"]
+argsPattern = '^\{\x00"command":"[^\x00]*(?<![A-Za-z0-9_~^])\.\.(?![A-Za-z0-9_.])'
+decision = "deny"
+priority = 900
+denyMessage = "Blocked: '..' path traversal. Use paths inside the workspace."
+
+# credential and secret paths (shell)
+[[rule]]
+toolName = ["run_shell_command", "ShellTool"]
+argsPattern = '^\{\x00"command":"[^\x00]*(?:\.env(?:\.(?:local|production|prod|development|staging|secret|secrets)|)(?![A-Za-z0-9_.])|\.codex|\.pgpass|/etc/ssl/private|/etc/(?:passwd-|shadow|gshadow|sudoers|polkit-1|crypttab|ssh|wireguard|openvpn|NetworkManager/system-connections)|/proc/(?:[^ \"\x27\\]*/|)(?:environ|mem|maps|cmdline|root|cwd|fd|exe|stack|syscall|mountinfo)|\.mozilla|google-chrome|chromium|BraveSoftware|\.password-store|\.vault-token|\.local/share/keyrings|\.pypirc|\.terraform\.d|\.azure|\.boto|\.s3cfg|\.config/rclone|\.huggingface|\.cache/huggingface|\.ollama|\.openai|\.anthropic|\.git/config|\.git/credentials|(?<![A-Za-z0-9_.-])credentials(?:\.json|)[ \"\x27\\]|(?<![A-Za-z0-9_])tokens?\.(?:json|txt|yaml|yml)|(?<![A-Za-z0-9_])secrets?\.(?:json|ya?ml|toml|env)|\.ppk|\.pfx|\.kdbx|private[_-]?key|Login Data|(?<![A-Za-z0-9_])Cookies[ \"\x27\\]|\.config/[^ \"\x27\\]*(?:token|secret|credential|auth)|\.local/share/[^ \"\x27\\]*(?:token|secret|credential))'
+decision = "deny"
+priority = 900
+denyMessage = "Blocked: this path holds credentials or secrets. Ask Ethan to run this himself if it is really needed."
+
+# private data directories (shell)
+[[rule]]
+toolName = ["run_shell_command", "ShellTool"]
+argsPattern = '^\{\x00"command":"[^\x00]*(?:(?:^|[ \"=]|\./|workspace/)(?:profile|business|grants|apply|backups|\.evidence|private|Company_Documents|receipts|invoices|clients|\.stversions|exports|data/sessions|data/session_archive|data/malakopia)(?:/|\"|$)|(?:cd|pushd) +(?:\./|)(?:profile|business|grants|apply|backups|\.evidence|private|Company_Documents|receipts|invoices|clients|\.stversions|exports|data/sessions|data/session_archive|data/malakopia)(?: |/|\"|$))'
+decision = "deny"
+priority = 900
+denyMessage = "Blocked: this folder holds private data (profile, business, grants, backups, evidence). Ask Ethan to run this himself if it is really needed."
+
+# globbing hidden names
+[[rule]]
+toolName = ["run_shell_command", "ShellTool"]
+argsPattern = '^\{\x00"command":"(?!python3 -c )[^\x00]*(?<=[ /])\.[^ \x27\"]*\*'
+decision = "deny"
+priority = 900
+denyMessage = "Blocked: glob over hidden names can reach secrets."
+
+# bare /etc and bare $HOME may only be listed (ls/stat/df/tree/file/echo), not read recursively
+[[rule]]
+toolName = ["run_shell_command", "ShellTool"]
+argsPattern = '(?:^\{\x00"command":"|\| |&& )(?:(?:env |)(?:FOO|BAR|BAZ|LC_ALL|LANG|TZ|NO_COLOR|CI|PYTHONDONTWRITEBYTECODE|PYTHONUNBUFFERED)=[A-Za-z0-9_.-]* |)(?:grep|egrep|fgrep|rg|find|cat|head|tail|diff|cmp|tar|sed|awk|jq|sort|wc|nl|cut|xargs|du|sha256sum|md5sum|git|python3|uniq|tr|cp|mv|pytest|make|npm) [^\x00]*(?:(?<=[ =])/etc|\$HOME)(?:[ \"\x27\\]|$)'
+decision = "deny"
+priority = 900
+denyMessage = "Blocked: path outside the workspace. Only workspace paths, /tmp and a few read-only system files are available."
+
+# mutating commands may only touch unprotected workspace paths
+[[rule]]
+toolName = ["run_shell_command", "ShellTool"]
+argsPattern = '(?:^\{\x00"command":"|\| |&& )(?:(?:env |)(?:FOO|BAR|BAZ|LC_ALL|LANG|TZ|NO_COLOR|CI|PYTHONDONTWRITEBYTECODE|PYTHONUNBUFFERED)=[A-Za-z0-9_.-]* |)(?:cp|mv|touch|mkdir|chmod|pytest) [^\x00]*(?:(?<![A-Za-z0-9_.-])(?:[Aa][Gg][Ee][Nn][Tt][Ss]\.[Mm][Dd]|[Cc][Ll][Aa][Uu][Dd][Ee]\.[Mm][Dd]|[Gg][Ee][Mm][Ii][Nn][Ii]\.[Mm][Dd]|\.[Gg][Ee][Mm][Ii][Nn][Ii](?:/|[ \"\x27\\])|\.[Gg][Ii][Tt](?:/|[ \"\x27\\])|\.[Cc][Oo][Dd][Ee][Xx]|\.[Cc][Ll][Aa][Uu][Dd][Ee]|\.ssh|\.aws|\.gnupg|\.config|\.bashrc|\.bash_profile|\.profile|\.zshrc|\.zprofile|\.zshenv|\.pam_environment|\.xinitrc|\.local/share|ethan(?:[ \"\x27\\]|$)|archive/[^ \"\x27\\]*policy)|[Ee][Tt][Hh][Aa][Nn]_[A-Za-z_]*(?:gemini_policy|policy|guard|alarm|capped_run|sandbox|admin)[A-Za-z_.]*|[Ee][Tt][Hh][Aa][Nn]_[Kk][Nn][Oo][Ww]\.py|policy_(?:bypass_suite|heldout)\.json|check_all_(?:latest\.json|history[A-Za-z._-]*\.jsonl)|[A-Za-z0-9_@-]+\.(?:service|timer|socket|path|mount|plist)(?:[ \"\x27\\]|$)|systemd|LaunchAgents|LaunchDaemons)'
+decision = "deny"
+priority = 900
+denyMessage = "Blocked: this path is protected (policy, guards, instruction files, .gemini, .git, startup files, service units)."
+
+# mutating commands take no glob (a glob could name a protected file)
+[[rule]]
+toolName = ["run_shell_command", "ShellTool"]
+argsPattern = '(?:^\{\x00"command":"|\| |&& )(?:(?:env |)(?:FOO|BAR|BAZ|LC_ALL|LANG|TZ|NO_COLOR|CI|PYTHONDONTWRITEBYTECODE|PYTHONUNBUFFERED)=[A-Za-z0-9_.-]* |)(?:cp|mv|touch|mkdir|chmod|pytest) [^\x00]*\*'
+decision = "deny"
+priority = 900
+denyMessage = "Blocked: no globs in commands that change files. List the file names."
+
+# sed -i takes no glob
+[[rule]]
+toolName = ["run_shell_command", "ShellTool"]
+argsPattern = '(?:^\{\x00"command":"|\| |&& )(?:(?:env |)(?:FOO|BAR|BAZ|LC_ALL|LANG|TZ|NO_COLOR|CI|PYTHONDONTWRITEBYTECODE|PYTHONUNBUFFERED)=[A-Za-z0-9_.-]* |)sed [^\x00]*(?<= )-[A-Za-z]*i[A-Za-z]* [^\x00]*\*'
+decision = "deny"
+priority = 900
+denyMessage = "Blocked: no globs in commands that change files. List the file names."
+
+# sed -i on protected files
+[[rule]]
+toolName = ["run_shell_command", "ShellTool"]
+argsPattern = '(?:^\{\x00"command":"|\| |&& )(?:(?:env |)(?:FOO|BAR|BAZ|LC_ALL|LANG|TZ|NO_COLOR|CI|PYTHONDONTWRITEBYTECODE|PYTHONUNBUFFERED)=[A-Za-z0-9_.-]* |)sed [^\x00]*(?<= )-[A-Za-z]*i[A-Za-z]* [^\x00]*(?:(?<![A-Za-z0-9_.-])(?:[Aa][Gg][Ee][Nn][Tt][Ss]\.[Mm][Dd]|[Cc][Ll][Aa][Uu][Dd][Ee]\.[Mm][Dd]|[Gg][Ee][Mm][Ii][Nn][Ii]\.[Mm][Dd]|\.[Gg][Ee][Mm][Ii][Nn][Ii](?:/|[ \"\x27\\])|\.[Gg][Ii][Tt](?:/|[ \"\x27\\])|\.[Cc][Oo][Dd][Ee][Xx]|\.[Cc][Ll][Aa][Uu][Dd][Ee]|\.ssh|\.aws|\.gnupg|\.config|\.bashrc|\.bash_profile|\.profile|\.zshrc|\.zprofile|\.zshenv|\.pam_environment|\.xinitrc|\.local/share|ethan(?:[ \"\x27\\]|$)|archive/[^ \"\x27\\]*policy)|[Ee][Tt][Hh][Aa][Nn]_[A-Za-z_]*(?:gemini_policy|policy|guard|alarm|capped_run|sandbox|admin)[A-Za-z_.]*|[Ee][Tt][Hh][Aa][Nn]_[Kk][Nn][Oo][Ww]\.py|policy_(?:bypass_suite|heldout)\.json|check_all_(?:latest\.json|history[A-Za-z._-]*\.jsonl)|[A-Za-z0-9_@-]+\.(?:service|timer|socket|path|mount|plist)(?:[ \"\x27\\]|$)|systemd|LaunchAgents|LaunchDaemons)'
+decision = "deny"
+priority = 900
+denyMessage = "Blocked: this path is protected (policy, guards, instruction files, .gemini, .git, startup files, service units)."
+
+# redirect target protected
+[[rule]]
+toolName = ["run_shell_command", "ShellTool"]
+argsPattern = '>>? ?[^ \"]*(?:(?<![A-Za-z0-9_.-])(?:[Aa][Gg][Ee][Nn][Tt][Ss]\.[Mm][Dd]|[Cc][Ll][Aa][Uu][Dd][Ee]\.[Mm][Dd]|[Gg][Ee][Mm][Ii][Nn][Ii]\.[Mm][Dd]|\.[Gg][Ee][Mm][Ii][Nn][Ii](?:/|[ \"\x27\\])|\.[Gg][Ii][Tt](?:/|[ \"\x27\\])|\.[Cc][Oo][Dd][Ee][Xx]|\.[Cc][Ll][Aa][Uu][Dd][Ee]|\.ssh|\.aws|\.gnupg|\.config|\.bashrc|\.bash_profile|\.profile|\.zshrc|\.zprofile|\.zshenv|\.pam_environment|\.xinitrc|\.local/share|ethan(?:[ \"\x27\\]|$)|archive/[^ \"\x27\\]*policy)|[Ee][Tt][Hh][Aa][Nn]_[A-Za-z_]*(?:gemini_policy|policy|guard|alarm|capped_run|sandbox|admin)[A-Za-z_.]*|[Ee][Tt][Hh][Aa][Nn]_[Kk][Nn][Oo][Ww]\.py|policy_(?:bypass_suite|heldout)\.json|check_all_(?:latest\.json|history[A-Za-z._-]*\.jsonl)|[A-Za-z0-9_@-]+\.(?:service|timer|socket|path|mount|plist)(?:[ \"\x27\\]|$)|systemd|LaunchAgents|LaunchDaemons)'
+decision = "deny"
+priority = 900
+denyMessage = "Blocked: this path is protected (policy, guards, instruction files, .gemini, .git, startup files, service units)."
+
+# mutating commands and redirects stay inside the workspace (no /tmp, no absolute outside)
+[[rule]]
+toolName = ["run_shell_command", "ShellTool"]
+argsPattern = '(?:^\{\x00"command":"|\| |&& )(?:(?:env |)(?:FOO|BAR|BAZ|LC_ALL|LANG|TZ|NO_COLOR|CI|PYTHONDONTWRITEBYTECODE|PYTHONUNBUFFERED)=[A-Za-z0-9_.-]* |)(?:cp|mv|touch|mkdir|chmod|pytest) [^\x00]*(?:(?<=[ =])|(?<=[ =]\x27)|(?<=[ =]\\\"))/(?!(?:(?:home/[^/ \"\x27\\]+/workspace|Users/[^/ \"\x27\\]+/workspace)|(?:tmp|private/tmp|var/folders|private/var/folders))/)'
+decision = "deny"
+priority = 900
+denyMessage = "Blocked: writes are limited to the workspace."
+
+# find: no -exec/-delete/-fprint family
+[[rule]]
+toolName = ["run_shell_command", "ShellTool"]
+argsPattern = '(?:^\{\x00"command":"|\| |&& )(?:(?:env |)(?:FOO|BAR|BAZ|LC_ALL|LANG|TZ|NO_COLOR|CI|PYTHONDONTWRITEBYTECODE|PYTHONUNBUFFERED)=[A-Za-z0-9_.-]* |)find [^\x00]*(?<= )-(?:exec|execdir|ok|okdir|delete|fprint|fprint0|fprintf|fls)(?: |")'
+decision = "deny"
+priority = 900
+denyMessage = "Blocked: find with -delete/-exec or file output. Ask Ethan to run this himself if it is really needed."
+
+# sort: no output file / external program
+[[rule]]
+toolName = ["run_shell_command", "ShellTool"]
+argsPattern = '(?:^\{\x00"command":"|\| |&& )(?:(?:env |)(?:FOO|BAR|BAZ|LC_ALL|LANG|TZ|NO_COLOR|CI|PYTHONDONTWRITEBYTECODE|PYTHONUNBUFFERED)=[A-Za-z0-9_.-]* |)sort [^\x00]*(?<= )(?:-[A-Za-z]*[oT][A-Za-z]*|--output|--compress-program|--temporary-directory|--files0-from|--random-source)(?: |\"|=|$)'
+decision = "deny"
+priority = 900
+denyMessage = "Blocked: sort option that writes files or runs programs."
+
+# tree: no output file
+[[rule]]
+toolName = ["run_shell_command", "ShellTool"]
+argsPattern = '(?:^\{\x00"command":"|\| |&& )(?:(?:env |)(?:FOO|BAR|BAZ|LC_ALL|LANG|TZ|NO_COLOR|CI|PYTHONDONTWRITEBYTECODE|PYTHONUNBUFFERED)=[A-Za-z0-9_.-]* |)tree [^\x00]*(?<= )(?:-[A-Za-z]*o[A-Za-z]*|--output)(?: |\"|=|$)'
+decision = "deny"
+priority = 900
+denyMessage = "Blocked: tree option that writes a file."
+
+# tail: no follow
+[[rule]]
+toolName = ["run_shell_command", "ShellTool"]
+argsPattern = '(?:^\{\x00"command":"|\| |&& )(?:(?:env |)(?:FOO|BAR|BAZ|LC_ALL|LANG|TZ|NO_COLOR|CI|PYTHONDONTWRITEBYTECODE|PYTHONUNBUFFERED)=[A-Za-z0-9_.-]* |)tail [^\x00]*(?<= )(?:-[A-Za-z0-9]*[fF][A-Za-z0-9]*|--follow|--retry)(?: |\"|=|$)'
+decision = "deny"
+priority = 900
+denyMessage = "Blocked: tail -f never returns."
+
+# file: no magic compile
+[[rule]]
+toolName = ["run_shell_command", "ShellTool"]
+argsPattern = '(?:^\{\x00"command":"|\| |&& )(?:(?:env |)(?:FOO|BAR|BAZ|LC_ALL|LANG|TZ|NO_COLOR|CI|PYTHONDONTWRITEBYTECODE|PYTHONUNBUFFERED)=[A-Za-z0-9_.-]* |)file [^\x00]*(?<= )(?:-C|--compile)(?: |\"|=|$)'
+decision = "deny"
+priority = 900
+denyMessage = "Blocked: file option that writes a file."
+
+# rg: no preprocessor
+[[rule]]
+toolName = ["run_shell_command", "ShellTool"]
+argsPattern = '(?:^\{\x00"command":"|\| |&& )(?:(?:env |)(?:FOO|BAR|BAZ|LC_ALL|LANG|TZ|NO_COLOR|CI|PYTHONDONTWRITEBYTECODE|PYTHONUNBUFFERED)=[A-Za-z0-9_.-]* |)rg [^\x00]*(?<= )--(?:pre|pre-glob|hostname-bin)(?: |\"|=|$)'
+decision = "deny"
+priority = 900
+denyMessage = "Blocked: rg option that runs a program."
+
+# date: no clock setting
+[[rule]]
+toolName = ["run_shell_command", "ShellTool"]
+argsPattern = '(?:^\{\x00"command":"|\| |&& )(?:(?:env |)(?:FOO|BAR|BAZ|LC_ALL|LANG|TZ|NO_COLOR|CI|PYTHONDONTWRITEBYTECODE|PYTHONUNBUFFERED)=[A-Za-z0-9_.-]* |)date [^\x00]*(?<= )(?:-s|--set)(?: |\"|=|$)'
+decision = "deny"
+priority = 900
+denyMessage = "Blocked: date option that changes the clock."
+
+# sleep takes only seconds
+[[rule]]
+toolName = ["run_shell_command", "ShellTool"]
+argsPattern = '(?:^\{\x00"command":"|\| |&& )(?:(?:env |)(?:FOO|BAR|BAZ|LC_ALL|LANG|TZ|NO_COLOR|CI|PYTHONDONTWRITEBYTECODE|PYTHONUNBUFFERED)=[A-Za-z0-9_.-]* |)sleep(?! [0-9.]+(?: |"))'
+decision = "deny"
+priority = 900
+denyMessage = "Blocked: sleep takes only a number."
+
+# uniq: at most one input operand, no output file
+[[rule]]
+toolName = ["run_shell_command", "ShellTool"]
+argsPattern = '(?:^\{\x00"command":"|\| |&& )(?:(?:env |)(?:FOO|BAR|BAZ|LC_ALL|LANG|TZ|NO_COLOR|CI|PYTHONDONTWRITEBYTECODE|PYTHONUNBUFFERED)=[A-Za-z0-9_.-]* |)uniq(?!(?: -[A-Za-z]+| -[fsw] [0-9]+|)(?: -[A-Za-z]+| -[fsw] [0-9]+|)(?: -[A-Za-z]+| -[fsw] [0-9]+|)(?: [A-Za-z0-9_./-]+|)(?:\"| \| | && ))'
+decision = "deny"
+priority = 900
+denyMessage = "Blocked: uniq with an output file."
+
+# mkdir only -p
+[[rule]]
+toolName = ["run_shell_command", "ShellTool"]
+argsPattern = '(?:^\{\x00"command":"|\| |&& )(?:(?:env |)(?:FOO|BAR|BAZ|LC_ALL|LANG|TZ|NO_COLOR|CI|PYTHONDONTWRITEBYTECODE|PYTHONUNBUFFERED)=[A-Za-z0-9_.-]* |)mkdir [^\x00]*(?<= )-(?!p(?: |"))'
+decision = "deny"
+priority = 900
+denyMessage = "Blocked: unsupported mkdir option."
+
+# touch takes only file names
+[[rule]]
+toolName = ["run_shell_command", "ShellTool"]
+argsPattern = '(?:^\{\x00"command":"|\| |&& )(?:(?:env |)(?:FOO|BAR|BAZ|LC_ALL|LANG|TZ|NO_COLOR|CI|PYTHONDONTWRITEBYTECODE|PYTHONUNBUFFERED)=[A-Za-z0-9_.-]* |)touch [^\x00]*(?<= )-'
+decision = "deny"
+priority = 900
+denyMessage = "Blocked: unsupported touch option."
+
+# cp options
+[[rule]]
+toolName = ["run_shell_command", "ShellTool"]
+argsPattern = '(?:^\{\x00"command":"|\| |&& )(?:(?:env |)(?:FOO|BAR|BAZ|LC_ALL|LANG|TZ|NO_COLOR|CI|PYTHONDONTWRITEBYTECODE|PYTHONUNBUFFERED)=[A-Za-z0-9_.-]* |)cp [^\x00]*(?<= )-(?!(?:[rRapnvfu]+|T|-)(?: |"))'
+decision = "deny"
+priority = 900
+denyMessage = "Blocked: unsupported cp option."
+
+# mv options
+[[rule]]
+toolName = ["run_shell_command", "ShellTool"]
+argsPattern = '(?:^\{\x00"command":"|\| |&& )(?:(?:env |)(?:FOO|BAR|BAZ|LC_ALL|LANG|TZ|NO_COLOR|CI|PYTHONDONTWRITEBYTECODE|PYTHONUNBUFFERED)=[A-Za-z0-9_.-]* |)mv [^\x00]*(?<= )-(?!(?:[nvfu]+|T|-)(?: |"))'
+decision = "deny"
+priority = 900
+denyMessage = "Blocked: unsupported mv option."
+
+# chmod only executable bit / ordinary file modes, no options
+[[rule]]
+toolName = ["run_shell_command", "ShellTool"]
+argsPattern = '(?:^\{\x00"command":"|\| |&& )(?:(?:env |)(?:FOO|BAR|BAZ|LC_ALL|LANG|TZ|NO_COLOR|CI|PYTHONDONTWRITEBYTECODE|PYTHONUNBUFFERED)=[A-Za-z0-9_.-]* |)chmod(?! (?:\+x|u\+x|a\+x|755|644|700|600|750|640|555|444)(?: |"))'
+decision = "deny"
+priority = 900
+denyMessage = "Blocked: chmod is limited to +x and ordinary file modes."
+
+# chmod no options
+[[rule]]
+toolName = ["run_shell_command", "ShellTool"]
+argsPattern = '(?:^\{\x00"command":"|\| |&& )(?:(?:env |)(?:FOO|BAR|BAZ|LC_ALL|LANG|TZ|NO_COLOR|CI|PYTHONDONTWRITEBYTECODE|PYTHONUNBUFFERED)=[A-Za-z0-9_.-]* |)chmod [^\x00]*(?<= )-'
+decision = "deny"
+priority = 900
+denyMessage = "Blocked: unsupported chmod option."
+
+# cd takes one workspace-relative directory
+[[rule]]
+toolName = ["run_shell_command", "ShellTool"]
+argsPattern = '(?:^\{\x00"command":"|\| |&& )(?:(?:env |)(?:FOO|BAR|BAZ|LC_ALL|LANG|TZ|NO_COLOR|CI|PYTHONDONTWRITEBYTECODE|PYTHONUNBUFFERED)=[A-Za-z0-9_.-]* |)cd(?! [A-Za-z0-9_@+.][A-Za-z0-9_@+./-]*(?:\"| \| | && ))'
+decision = "deny"
+priority = 900
+denyMessage = "Blocked: cd takes one relative directory."
+
+# hostname/tar/pip/node/npm/make/pytest/ethan forms
+[[rule]]
+toolName = ["run_shell_command", "ShellTool"]
+argsPattern = '(?:^\{\x00"command":"|\| |&& )(?:(?:env |)(?:FOO|BAR|BAZ|LC_ALL|LANG|TZ|NO_COLOR|CI|PYTHONDONTWRITEBYTECODE|PYTHONUNBUFFERED)=[A-Za-z0-9_.-]* |)tar(?! -?[tvzjJf]*t[tvzjJf]*(?: |"))'
+decision = "deny"
+priority = 900
+denyMessage = "Blocked: tar is limited to listing (tf)."
+
+# tar: no extra options
+[[rule]]
+toolName = ["run_shell_command", "ShellTool"]
+argsPattern = '(?:^\{\x00"command":"|\| |&& )(?:(?:env |)(?:FOO|BAR|BAZ|LC_ALL|LANG|TZ|NO_COLOR|CI|PYTHONDONTWRITEBYTECODE|PYTHONUNBUFFERED)=[A-Za-z0-9_.-]* |)tar [^ ]+ [^\x00]*(?<= )-'
+decision = "deny"
+priority = 900
+denyMessage = "Blocked: tar is limited to listing (tf)."
+
+# pip: read-only subcommands
+[[rule]]
+toolName = ["run_shell_command", "ShellTool"]
+argsPattern = '(?:^\{\x00"command":"|\| |&& )(?:(?:env |)(?:FOO|BAR|BAZ|LC_ALL|LANG|TZ|NO_COLOR|CI|PYTHONDONTWRITEBYTECODE|PYTHONUNBUFFERED)=[A-Za-z0-9_.-]* |)pip3?(?! (?:list|show|freeze|check|--version)(?: |"))'
+decision = "deny"
+priority = 900
+denyMessage = "Blocked: pip is limited to list/show/freeze/check."
+
+# pip list: no index queries
+[[rule]]
+toolName = ["run_shell_command", "ShellTool"]
+argsPattern = '(?:^\{\x00"command":"|\| |&& )(?:(?:env |)(?:FOO|BAR|BAZ|LC_ALL|LANG|TZ|NO_COLOR|CI|PYTHONDONTWRITEBYTECODE|PYTHONUNBUFFERED)=[A-Za-z0-9_.-]* |)pip3? [^\x00]*(?<= )-(?:-outdated|o|-uptodate|u|-index-url|i|-extra-index-url|-find-links|f)(?: |\"|=|$)'
+decision = "deny"
+priority = 900
+denyMessage = "Blocked: that pip option contacts a package index."
+
+# node: version only
+[[rule]]
+toolName = ["run_shell_command", "ShellTool"]
+argsPattern = '(?:^\{\x00"command":"|\| |&& )(?:(?:env |)(?:FOO|BAR|BAZ|LC_ALL|LANG|TZ|NO_COLOR|CI|PYTHONDONTWRITEBYTECODE|PYTHONUNBUFFERED)=[A-Za-z0-9_.-]* |)node(?! (?:--version|-v)(?: |"))'
+decision = "deny"
+priority = 900
+denyMessage = "Blocked: node is limited to --version."
+
+# npm: fixed scripts
+[[rule]]
+toolName = ["run_shell_command", "ShellTool"]
+argsPattern = '(?:^\{\x00"command":"|\| |&& )(?:(?:env |)(?:FOO|BAR|BAZ|LC_ALL|LANG|TZ|NO_COLOR|CI|PYTHONDONTWRITEBYTECODE|PYTHONUNBUFFERED)=[A-Za-z0-9_.-]* |)npm(?! (?:run (?:build|test|lint|check|typecheck)|test)(?: |"))'
+decision = "deny"
+priority = 900
+denyMessage = "Blocked: npm is limited to run build/test/lint."
+
+# make: fixed targets
+[[rule]]
+toolName = ["run_shell_command", "ShellTool"]
+argsPattern = '(?:^\{\x00"command":"|\| |&& )(?:(?:env |)(?:FOO|BAR|BAZ|LC_ALL|LANG|TZ|NO_COLOR|CI|PYTHONDONTWRITEBYTECODE|PYTHONUNBUFFERED)=[A-Za-z0-9_.-]* |)make(?! (?:test|check|lint|build|all)(?: |"))'
+decision = "deny"
+priority = 900
+denyMessage = "Blocked: make is limited to test/check/lint/build."
+
+# ethan: health and guarded git only
+[[rule]]
+toolName = ["run_shell_command", "ShellTool"]
+argsPattern = '(?:^\{\x00"command":"|\| |&& )(?:(?:env |)(?:FOO|BAR|BAZ|LC_ALL|LANG|TZ|NO_COLOR|CI|PYTHONDONTWRITEBYTECODE|PYTHONUNBUFFERED)=[A-Za-z0-9_.-]* |)ethan(?! (?:health|--version|git (?:status|begin|stage|verify|finish|undo-last))(?: |"))'
+decision = "deny"
+priority = 900
+denyMessage = "Blocked: ethan is limited to health and the guarded git commands."
+
+# capped run: only unit tests
+[[rule]]
+toolName = ["run_shell_command", "ShellTool"]
+argsPattern = '(?:^\{\x00"command":"|\| |&& )(?:(?:env |)(?:FOO|BAR|BAZ|LC_ALL|LANG|TZ|NO_COLOR|CI|PYTHONDONTWRITEBYTECODE|PYTHONUNBUFFERED)=[A-Za-z0-9_.-]* |)scripts/ethan_capped_run\.sh(?! python3 (?:-B |)-m (?:unittest|pytest)(?: |"))'
+decision = "deny"
+priority = 900
+denyMessage = "Blocked: the capped runner is limited to unittest/pytest."
+
+# nvidia-smi: query only
+[[rule]]
+toolName = ["run_shell_command", "ShellTool"]
+argsPattern = '(?:^\{\x00"command":"|\| |&& )(?:(?:env |)(?:FOO|BAR|BAZ|LC_ALL|LANG|TZ|NO_COLOR|CI|PYTHONDONTWRITEBYTECODE|PYTHONUNBUFFERED)=[A-Za-z0-9_.-]* |)nvidia-smi(?!(?: --query-gpu=[a-z._,]+| --query-compute-apps=[a-z._,]+| --format=csv[a-z,]*| -q| -L|)(?: --query-gpu=[a-z._,]+| --query-compute-apps=[a-z._,]+| --format=csv[a-z,]*| -q| -L|)(?: --query-gpu=[a-z._,]+| --query-compute-apps=[a-z._,]+| --format=csv[a-z,]*| -q| -L|)(?: --query-gpu=[a-z._,]+| --query-compute-apps=[a-z._,]+| --format=csv[a-z,]*| -q| -L|)(?:\"| \| | && ))'
+decision = "deny"
+priority = 900
+denyMessage = "Blocked: nvidia-smi is limited to read-only queries."
+
+# xargs: only read-only helpers
+[[rule]]
+toolName = ["run_shell_command", "ShellTool"]
+argsPattern = '(?:^\{\x00"command":"|\| |&& )(?:(?:env |)(?:FOO|BAR|BAZ|LC_ALL|LANG|TZ|NO_COLOR|CI|PYTHONDONTWRITEBYTECODE|PYTHONUNBUFFERED)=[A-Za-z0-9_.-]* |)xargs(?!(?: -0| -r| -n [0-9]+|)(?: -0| -r| -n [0-9]+|)(?: -0| -r| -n [0-9]+|) (?:echo|cat|head|tail|wc|grep|egrep|fgrep|rg|ls|stat|file|sha256sum|md5sum|sort|basename|dirname)(?: |"))'
+decision = "deny"
+priority = 900
+denyMessage = "Blocked: xargs may only run read-only helper commands."
+
+# sed: options and script must match the safe grammar (no e/w/r commands)
+[[rule]]
+toolName = ["run_shell_command", "ShellTool"]
+argsPattern = '(?:^\{\x00"command":"|\| |&& )(?:(?:env |)(?:FOO|BAR|BAZ|LC_ALL|LANG|TZ|NO_COLOR|CI|PYTHONDONTWRITEBYTECODE|PYTHONUNBUFFERED)=[A-Za-z0-9_.-]* |)sed(?! (?:-[nEri]+ |)(?:-[nEri]+ |)(?:-[nEri]+ |)(?:\x27(?:[0-9]+(?:,(?:[0-9]+|\$)|)[pd]|\$p|/[^/\x27;\\]*/[pd]|s/[^/\x27;\\]*/[^/\x27;\\]*/[gpIi0-9]*)\x27|s/[A-Za-z0-9_.-]*/[A-Za-z0-9_.-]*/[gpIi0-9]*|[0-9]+(?:,[0-9]+|)[pd])(?: [A-Za-z0-9_./ -]+|)(?:\"| \| | && ))'
+decision = "deny"
+priority = 900
+denyMessage = "Blocked: sed is limited to simple p/d/s scripts on files."
+
+# sed: only known flags after the script
+[[rule]]
+toolName = ["run_shell_command", "ShellTool"]
+argsPattern = '(?:^\{\x00"command":"|\| |&& )(?:(?:env |)(?:FOO|BAR|BAZ|LC_ALL|LANG|TZ|NO_COLOR|CI|PYTHONDONTWRITEBYTECODE|PYTHONUNBUFFERED)=[A-Za-z0-9_.-]* |)sed [^\x00]*(?<= )-(?![nEri]+(?: |"))'
+decision = "deny"
+priority = 900
+denyMessage = "Blocked: unsupported sed option."
+
+# awk: simple programs only (no system/getline/pipes/redirection/dq strings)
+[[rule]]
+toolName = ["run_shell_command", "ShellTool"]
+argsPattern = '(?:^\{\x00"command":"|\| |&& )(?:(?:env |)(?:FOO|BAR|BAZ|LC_ALL|LANG|TZ|NO_COLOR|CI|PYTHONDONTWRITEBYTECODE|PYTHONUNBUFFERED)=[A-Za-z0-9_.-]* |)awk(?! (?:-F(?: ?\x27[^\x27\x00]*\x27| ?[^ \x27\"\\-]+) |)\x27[A-Za-z0-9_ $.,+*/%=!{}()\[\];:-]*\x27(?: [A-Za-z0-9_./ -]+|)(?:\"| \| | && ))'
+decision = "deny"
+priority = 900
+denyMessage = "Blocked: awk is limited to simple print programs."
+
+# awk: banned functions
+[[rule]]
+toolName = ["run_shell_command", "ShellTool"]
+argsPattern = '(?:^\{\x00"command":"|\| |&& )(?:(?:env |)(?:FOO|BAR|BAZ|LC_ALL|LANG|TZ|NO_COLOR|CI|PYTHONDONTWRITEBYTECODE|PYTHONUNBUFFERED)=[A-Za-z0-9_.-]* |)awk [^\x00]*(?:system|getline|ENVIRON|close|fflush|PROCINFO|@include|RS=)'
+decision = "deny"
+priority = 900
+denyMessage = "Blocked: awk program can run commands or read the environment."
+
+# jq: read-only filters
+[[rule]]
+toolName = ["run_shell_command", "ShellTool"]
+argsPattern = '(?:^\{\x00"command":"|\| |&& )(?:(?:env |)(?:FOO|BAR|BAZ|LC_ALL|LANG|TZ|NO_COLOR|CI|PYTHONDONTWRITEBYTECODE|PYTHONUNBUFFERED)=[A-Za-z0-9_.-]* |)jq(?!(?: -[rcSeMCnsR]+|)(?: -[rcSeMCnsR]+|)(?: -[rcSeMCnsR]+|) (?:\x27[^\x27\x00$@]*\x27|[A-Za-z0-9_.\[\]-]+)(?: [A-Za-z0-9_./-]+|)(?:\"| \| | && ))'
+decision = "deny"
+priority = 900
+denyMessage = "Blocked: jq is limited to simple filters on files."
+
+# jq: no environment/input functions
+[[rule]]
+toolName = ["run_shell_command", "ShellTool"]
+argsPattern = '(?:^\{\x00"command":"|\| |&& )(?:(?:env |)(?:FOO|BAR|BAZ|LC_ALL|LANG|TZ|NO_COLOR|CI|PYTHONDONTWRITEBYTECODE|PYTHONUNBUFFERED)=[A-Za-z0-9_.-]* |)jq [^\x00]*(?<![A-Za-z0-9_])(?:env|ENV|input|inputs|input_filename|import|include|debug|stderr|halt|halt_error|getpath|\$__)(?![A-Za-z0-9_])'
+decision = "deny"
+priority = 900
+denyMessage = "Blocked: jq function can read the environment or other files."
+
+# git: only read-only subcommands (no global options except '-C .')
+[[rule]]
+toolName = ["run_shell_command", "ShellTool"]
+argsPattern = '(?:^\{\x00"command":"|\| |&& )(?:(?:env |)(?:FOO|BAR|BAZ|LC_ALL|LANG|TZ|NO_COLOR|CI|PYTHONDONTWRITEBYTECODE|PYTHONUNBUFFERED)=[A-Za-z0-9_.-]* |)git(?! (?:-C \. |--no-pager |)(?:-C \. |--no-pager |)(?:(?:status|diff|log|show|blame|ls-files|rev-parse|rev-list|describe|shortlog|cat-file|ls-tree|diff-tree|name-rev|show-ref|count-objects|merge-base|grep)(?: |")|branch(?: -a| -r| -v| -vv| --show-current| --list|)(?: -a| -r| -v| -vv| --show-current| --list|)(?: -a| -r| -v| -vv| --show-current| --list|)(?:\"| \| | && )|tag(?: -l| --list|)(?:\"| \| | && )))'
+decision = "deny"
+priority = 900
+denyMessage = "Blocked: this git command changes the repository or reaches the network. Use the ethan git guard commands instead."
+
+# git: only whitelisted flags (no -c, --output, --exec-path, --no-index, --ext-diff, -O, URLs)
+[[rule]]
+toolName = ["run_shell_command", "ShellTool"]
+argsPattern = '(?:^\{\x00"command":"|\| |&& )(?:(?:env |)(?:FOO|BAR|BAZ|LC_ALL|LANG|TZ|NO_COLOR|CI|PYTHONDONTWRITEBYTECODE|PYTHONUNBUFFERED)=[A-Za-z0-9_.-]* |)git [^\x00]*(?<= )-(?!(?:[0-9]+|C \.|[pslarvuhbzwiImtne]+|u(?:no|all|normal)|U[0-9]+|M|L|S[^ ]*|G[^ ]*|-(?:no-pager|oneline|stat(?:=[0-9,]+|)|name-only|name-status|short|porcelain(?:=v[12]|)|branch|shortstat|numstat|summary|no-color|color|graph|decorate|all|follow|cached|staged|no-merges|merges|reverse|abbrev-commit|abbrev=[0-9]+|relative|first-parent|topo-order|date-order|since|until|after|before|author|committer|grep|format|pretty|max-count=[0-9]+|diff-filter=[A-Za-z]+|date=[a-z0-9:-]+|show-current|list|ignored|untracked-files(?:=[a-z]+|)|count|no-patch|root|cc|skip=[0-9]+|max-parents=[0-9]+|min-parents=[0-9]+|no-abbrev|full-history|simplify-by-decoration|exit-code|quiet|no-renames|find-renames|word-diff|ignore-all-space|ignore-space-change|unified=[0-9]+|tags|heads|remotes|verify|short=[0-9]+|show-toplevel|abbrev-ref|is-inside-work-tree|contains|always|line-number|files-with-matches|ignore-case|word-regexp|fixed-strings|extended-regexp|invert-match|))(?: |\"|=|$))'
+decision = "deny"
+priority = 900
+denyMessage = "Blocked: git option not on the read-only whitelist."
+
+# git: arguments must not be URLs or remotes
+[[rule]]
+toolName = ["run_shell_command", "ShellTool"]
+argsPattern = '(?:^\{\x00"command":"|\| |&& )(?:(?:env |)(?:FOO|BAR|BAZ|LC_ALL|LANG|TZ|NO_COLOR|CI|PYTHONDONTWRITEBYTECODE|PYTHONUNBUFFERED)=[A-Za-z0-9_.-]* |)git [^\x00]*(?::\/\/|git@|ssh:)'
+decision = "deny"
+priority = 900
+denyMessage = "Blocked: git network access."
+
+# python3: allowed forms (script file, -m unittest|pytest|py_compile|json.tool, --version, or one strict -c template)
+[[rule]]
+toolName = ["run_shell_command", "ShellTool"]
+argsPattern = '(?:^\{\x00"command":"|\| |&& )(?:(?:env |)(?:FOO|BAR|BAZ|LC_ALL|LANG|TZ|NO_COLOR|CI|PYTHONDONTWRITEBYTECODE|PYTHONUNBUFFERED)=[A-Za-z0-9_.-]* |)python3(?! (?:--version|-V)(?: |")| (?:-B |-u |)(?:-B |)(?:-m (?:unittest|pytest|py_compile)(?: |")|(?:\./|)[A-Za-z0-9_][A-Za-z0-9_./-]*\.py(?: |"))| -c )'
+decision = "deny"
+priority = 900
+denyMessage = "Blocked: python3 is limited to workspace scripts, unittest/pytest/py_compile, --version and a few strict one-liners. Put code in a script file in the workspace."
+
+# python3 -c strict template group import csv;  (dq wrapper)
+[[rule]]
+toolName = ["run_shell_command", "ShellTool"]
+argsPattern = '^\{\x00"command":"python3 -c (?=\\\")(?=\\\"import csv; )(?!\\\"(?:import csv; print\((?:sum|max|min)\((?:int|float)\(x\[\x27[A-Za-z0-9_ \u00a1-\uffff-]+\x27\]\) for x in csv\.DictReader\(open\(\x27[A-Za-z0-9_\u00a1-\uffff][A-Za-z0-9_./\u00a1-\uffff-]*\x27(?:, \x27(?:r|rb)\x27|)\)\)\)\)|import csv; print\(len\(list\(csv\.DictReader\(open\(\x27[A-Za-z0-9_\u00a1-\uffff][A-Za-z0-9_./\u00a1-\uffff-]*\x27(?:, \x27(?:r|rb)\x27|)\)\)\)\)\))\\\""\x00)'
+decision = "deny"
+priority = 900
+denyMessage = "Blocked: python -c is limited to a few strict read-only one-liners (print/sum/max/len over open('<file>'), csv.DictReader, json.load). Put code in a script file in the workspace."
+
+# python3 -c strict template group import json;  (dq wrapper)
+[[rule]]
+toolName = ["run_shell_command", "ShellTool"]
+argsPattern = '^\{\x00"command":"python3 -c (?=\\\")(?=\\\"import json; )(?!\\\"(?:import json; print\(json\.load\(open\(\x27[A-Za-z0-9_\u00a1-\uffff][A-Za-z0-9_./\u00a1-\uffff-]*\x27(?:, \x27(?:r|rb)\x27|)\)\)(?:\[\x27[A-Za-z0-9_ \u00a1-\uffff-]+\x27\]|\[[0-9]+\]|)(?:\[\x27[A-Za-z0-9_ \u00a1-\uffff-]+\x27\]|\[[0-9]+\]|)(?:\[\x27[A-Za-z0-9_ \u00a1-\uffff-]+\x27\]|\[[0-9]+\]|)\)|import json; print\(json\.dumps\(\{\}\)\))\\\""\x00)'
+decision = "deny"
+priority = 900
+denyMessage = "Blocked: python -c is limited to a few strict read-only one-liners (print/sum/max/len over open('<file>'), csv.DictReader, json.load). Put code in a script file in the workspace."
+
+# python3 -c strict template group print\( (dq wrapper)
+[[rule]]
+toolName = ["run_shell_command", "ShellTool"]
+argsPattern = '^\{\x00"command":"python3 -c (?=\\\")(?=\\\"print\()(?!\\\"(?:print\(max\(len\(l\) for l in open\(\x27[A-Za-z0-9_\u00a1-\uffff][A-Za-z0-9_./\u00a1-\uffff-]*\x27(?:, \x27(?:r|rb)\x27|)\)\.read\(\)\.splitlines\(\)\)\)|print\(max\(len\(l\.rstrip\(\x27\\\\n\x27\)\) for l in open\(\x27[A-Za-z0-9_\u00a1-\uffff][A-Za-z0-9_./\u00a1-\uffff-]*\x27(?:, \x27(?:r|rb)\x27|)\)\)\)|print\(sum\(int\(x\) for x in open\(\x27[A-Za-z0-9_\u00a1-\uffff][A-Za-z0-9_./\u00a1-\uffff-]*\x27(?:, \x27(?:r|rb)\x27|)\)\.read\(\)\.split\(\)\)\)|print\(sum\(1 for l in open\(\x27[A-Za-z0-9_\u00a1-\uffff][A-Za-z0-9_./\u00a1-\uffff-]*\x27(?:, \x27(?:r|rb)\x27|)\)\)\)|print\(len\(open\(\x27[A-Za-z0-9_\u00a1-\uffff][A-Za-z0-9_./\u00a1-\uffff-]*\x27(?:, \x27(?:r|rb)\x27|)\)\.read\(\)\.splitlines\(\)\)\)|print\(open\(\x27[A-Za-z0-9_\u00a1-\uffff][A-Za-z0-9_./\u00a1-\uffff-]*\x27(?:, \x27(?:r|rb)\x27|)(?:, encoding=\x27utf-8\x27|)\)\.read\(\)\)|print\((?:[0-9 +*/()-]+|\x27[A-Za-z0-9_ .,:/\u00a1-\uffff-]*\x27)\))\\\""\x00)'
+decision = "deny"
+priority = 900
+denyMessage = "Blocked: python -c is limited to a few strict read-only one-liners (print/sum/max/len over open('<file>'), csv.DictReader, json.load). Put code in a script file in the workspace."
+
+# python3 -c strict template group import (?:re|ast);  (dq wrapper)
+[[rule]]
+toolName = ["run_shell_command", "ShellTool"]
+argsPattern = '^\{\x00"command":"python3 -c (?=\\\")(?=\\\"import (?:re|ast); )(?!\\\"(?:import re; print\(re\.compile\(\x27[A-Za-z0-9_ .,:/\u00a1-\uffff-]*\x27\)\.pattern\)|import ast; print\(ast\.literal_eval\(\x27[0-9,\[\] ]*\x27\)\))\\\""\x00)'
+decision = "deny"
+priority = 900
+denyMessage = "Blocked: python -c is limited to a few strict read-only one-liners (print/sum/max/len over open('<file>'), csv.DictReader, json.load). Put code in a script file in the workspace."
+
+# python3 -c: unknown program shape (dq wrapper)
+[[rule]]
+toolName = ["run_shell_command", "ShellTool"]
+argsPattern = '^\{\x00"command":"python3 -c (?=\\\")(?!\\\"(?:import (?:csv|json|re|ast); |print\())'
+decision = "deny"
+priority = 900
+denyMessage = "Blocked: python -c is limited to a few strict read-only one-liners (print/sum/max/len over open('<file>'), csv.DictReader, json.load). Put code in a script file in the workspace."
+
+# python3 -c strict template group import csv;  (sq wrapper)
+[[rule]]
+toolName = ["run_shell_command", "ShellTool"]
+argsPattern = '^\{\x00"command":"python3 -c (?=\x27)(?=\x27import csv; )(?!\x27(?:import csv; print\((?:sum|max|min)\((?:int|float)\(x\[(?:\x27\\\"\x27\\\"\x27)[A-Za-z0-9_ \u00a1-\uffff-]+(?:\x27\\\"\x27\\\"\x27)\]\) for x in csv\.DictReader\(open\((?:\x27\\\"\x27\\\"\x27)[A-Za-z0-9_\u00a1-\uffff][A-Za-z0-9_./\u00a1-\uffff-]*(?:\x27\\\"\x27\\\"\x27)(?:, (?:\x27\\\"\x27\\\"\x27)(?:r|rb)(?:\x27\\\"\x27\\\"\x27)|)\)\)\)\)|import csv; print\(len\(list\(csv\.DictReader\(open\((?:\x27\\\"\x27\\\"\x27)[A-Za-z0-9_\u00a1-\uffff][A-Za-z0-9_./\u00a1-\uffff-]*(?:\x27\\\"\x27\\\"\x27)(?:, (?:\x27\\\"\x27\\\"\x27)(?:r|rb)(?:\x27\\\"\x27\\\"\x27)|)\)\)\)\)\))\x27"\x00)'
+decision = "deny"
+priority = 900
+denyMessage = "Blocked: python -c is limited to a few strict read-only one-liners (print/sum/max/len over open('<file>'), csv.DictReader, json.load). Put code in a script file in the workspace."
+
+# python3 -c strict template group import json;  (sq wrapper)
+[[rule]]
+toolName = ["run_shell_command", "ShellTool"]
+argsPattern = '^\{\x00"command":"python3 -c (?=\x27)(?=\x27import json; )(?!\x27(?:import json; print\(json\.load\(open\((?:\x27\\\"\x27\\\"\x27)[A-Za-z0-9_\u00a1-\uffff][A-Za-z0-9_./\u00a1-\uffff-]*(?:\x27\\\"\x27\\\"\x27)(?:, (?:\x27\\\"\x27\\\"\x27)(?:r|rb)(?:\x27\\\"\x27\\\"\x27)|)\)\)(?:\[(?:\x27\\\"\x27\\\"\x27)[A-Za-z0-9_ \u00a1-\uffff-]+(?:\x27\\\"\x27\\\"\x27)\]|\[[0-9]+\]|)(?:\[(?:\x27\\\"\x27\\\"\x27)[A-Za-z0-9_ \u00a1-\uffff-]+(?:\x27\\\"\x27\\\"\x27)\]|\[[0-9]+\]|)(?:\[(?:\x27\\\"\x27\\\"\x27)[A-Za-z0-9_ \u00a1-\uffff-]+(?:\x27\\\"\x27\\\"\x27)\]|\[[0-9]+\]|)\)|import json; print\(json\.dumps\(\{\}\)\))\x27"\x00)'
+decision = "deny"
+priority = 900
+denyMessage = "Blocked: python -c is limited to a few strict read-only one-liners (print/sum/max/len over open('<file>'), csv.DictReader, json.load). Put code in a script file in the workspace."
+
+# python3 -c strict template group print\( (sq wrapper)
+[[rule]]
+toolName = ["run_shell_command", "ShellTool"]
+argsPattern = '^\{\x00"command":"python3 -c (?=\x27)(?=\x27print\()(?!\x27(?:print\(max\(len\(l\) for l in open\((?:\x27\\\"\x27\\\"\x27)[A-Za-z0-9_\u00a1-\uffff][A-Za-z0-9_./\u00a1-\uffff-]*(?:\x27\\\"\x27\\\"\x27)(?:, (?:\x27\\\"\x27\\\"\x27)(?:r|rb)(?:\x27\\\"\x27\\\"\x27)|)\)\.read\(\)\.splitlines\(\)\)\)|print\(max\(len\(l\.rstrip\((?:\x27\\\"\x27\\\"\x27)\\\\n(?:\x27\\\"\x27\\\"\x27)\)\) for l in open\((?:\x27\\\"\x27\\\"\x27)[A-Za-z0-9_\u00a1-\uffff][A-Za-z0-9_./\u00a1-\uffff-]*(?:\x27\\\"\x27\\\"\x27)(?:, (?:\x27\\\"\x27\\\"\x27)(?:r|rb)(?:\x27\\\"\x27\\\"\x27)|)\)\)\)|print\(sum\(int\(x\) for x in open\((?:\x27\\\"\x27\\\"\x27)[A-Za-z0-9_\u00a1-\uffff][A-Za-z0-9_./\u00a1-\uffff-]*(?:\x27\\\"\x27\\\"\x27)(?:, (?:\x27\\\"\x27\\\"\x27)(?:r|rb)(?:\x27\\\"\x27\\\"\x27)|)\)\.read\(\)\.split\(\)\)\)|print\(sum\(1 for l in open\((?:\x27\\\"\x27\\\"\x27)[A-Za-z0-9_\u00a1-\uffff][A-Za-z0-9_./\u00a1-\uffff-]*(?:\x27\\\"\x27\\\"\x27)(?:, (?:\x27\\\"\x27\\\"\x27)(?:r|rb)(?:\x27\\\"\x27\\\"\x27)|)\)\)\)|print\(len\(open\((?:\x27\\\"\x27\\\"\x27)[A-Za-z0-9_\u00a1-\uffff][A-Za-z0-9_./\u00a1-\uffff-]*(?:\x27\\\"\x27\\\"\x27)(?:, (?:\x27\\\"\x27\\\"\x27)(?:r|rb)(?:\x27\\\"\x27\\\"\x27)|)\)\.read\(\)\.splitlines\(\)\)\)|print\(open\((?:\x27\\\"\x27\\\"\x27)[A-Za-z0-9_\u00a1-\uffff][A-Za-z0-9_./\u00a1-\uffff-]*(?:\x27\\\"\x27\\\"\x27)(?:, (?:\x27\\\"\x27\\\"\x27)(?:r|rb)(?:\x27\\\"\x27\\\"\x27)|)(?:, encoding=(?:\x27\\\"\x27\\\"\x27)utf-8(?:\x27\\\"\x27\\\"\x27)|)\)\.read\(\)\)|print\((?:[0-9 +*/()-]+|(?:\x27\\\"\x27\\\"\x27)[A-Za-z0-9_ .,:/\u00a1-\uffff-]*(?:\x27\\\"\x27\\\"\x27))\))\x27"\x00)'
+decision = "deny"
+priority = 900
+denyMessage = "Blocked: python -c is limited to a few strict read-only one-liners (print/sum/max/len over open('<file>'), csv.DictReader, json.load). Put code in a script file in the workspace."
+
+# python3 -c strict template group import (?:re|ast);  (sq wrapper)
+[[rule]]
+toolName = ["run_shell_command", "ShellTool"]
+argsPattern = '^\{\x00"command":"python3 -c (?=\x27)(?=\x27import (?:re|ast); )(?!\x27(?:import re; print\(re\.compile\((?:\x27\\\"\x27\\\"\x27)[A-Za-z0-9_ .,:/\u00a1-\uffff-]*(?:\x27\\\"\x27\\\"\x27)\)\.pattern\)|import ast; print\(ast\.literal_eval\((?:\x27\\\"\x27\\\"\x27)[0-9,\[\] ]*(?:\x27\\\"\x27\\\"\x27)\)\))\x27"\x00)'
+decision = "deny"
+priority = 900
+denyMessage = "Blocked: python -c is limited to a few strict read-only one-liners (print/sum/max/len over open('<file>'), csv.DictReader, json.load). Put code in a script file in the workspace."
+
+# python3 -c: unknown program shape (sq wrapper)
+[[rule]]
+toolName = ["run_shell_command", "ShellTool"]
+argsPattern = '^\{\x00"command":"python3 -c (?=\x27)(?!\x27(?:import (?:csv|json|re|ast); |print\())'
+decision = "deny"
+priority = 900
+denyMessage = "Blocked: python -c is limited to a few strict read-only one-liners (print/sum/max/len over open('<file>'), csv.DictReader, json.load). Put code in a script file in the workspace."
+
+# python3 -c only as the first plain command (not after a pipe, not behind an env prefix)
+[[rule]]
+toolName = ["run_shell_command", "ShellTool"]
+argsPattern = '(?:\| |&& )(?:(?:env |)(?:FOO|BAR|BAZ|LC_ALL|LANG|TZ|NO_COLOR|CI|PYTHONDONTWRITEBYTECODE|PYTHONUNBUFFERED)=[A-Za-z0-9_.-]* |)python3 [^\x00]*-c |^\{\x00"command":"(?:env |)[A-Z_]+=[^ ]* python3 [^\x00]*-c '
+decision = "deny"
+priority = 900
+denyMessage = "Blocked: python -c is only allowed as a single plain command."
+
+# python3 -c: neither quote style
+[[rule]]
+toolName = ["run_shell_command", "ShellTool"]
+argsPattern = '^\{\x00"command":"python3 -c (?!\\\"|\x27)'
+decision = "deny"
+priority = 900
+denyMessage = "Blocked: python -c needs a quoted program."
+
+# running guard scripts: only the guarded git subcommands
+[[rule]]
+toolName = ["run_shell_command", "ShellTool"]
+argsPattern = '(?:^\{\x00"command":"|\| |&& )(?:(?:env |)(?:FOO|BAR|BAZ|LC_ALL|LANG|TZ|NO_COLOR|CI|PYTHONDONTWRITEBYTECODE|PYTHONUNBUFFERED)=[A-Za-z0-9_.-]* |)python3 [^\x00]*ethan_(?!git_guard\.py (?:status|begin|stage|verify|finish|undo-last)(?: |"))[A-Za-z_]*(?:policy|guard|alarm|sandbox|capped_run|admin)[A-Za-z_]*\.py'
+decision = "deny"
+priority = 900
+denyMessage = "Blocked: guard and policy scripts cannot be run from the model."
+
+# ethan_know.py: only read-only search/answer-pack/stats/verify/freshness (build and any other mention of the file are denied)
+[[rule]]
+toolName = ["run_shell_command", "ShellTool"]
+argsPattern = 'ethan_know(?!\.py (?:(?:search|answer-pack) (?:\x27[^\x27\x00]*\x27|\\\"[^\\\"\x00]*\\\"|[A-Za-z0-9_.-]+)(?: --class (?:code|docs|research|policy|lesson|failure|license)| --k [0-9]+| --json|)(?: --class (?:code|docs|research|policy|lesson|failure|license)| --k [0-9]+| --json|)(?: --class (?:code|docs|research|policy|lesson|failure|license)| --k [0-9]+| --json|)|(?:stats|verify|freshness)(?: --json|))(?:\"| \| | && ))'
+decision = "deny"
+priority = 900
+denyMessage = "Blocked: the knowledge tool may only be run as 'python3 scripts/ethan_know.py search|answer-pack 'QUERY' [--class C] [--k N]' or stats/verify/freshness. Building the index is done by Magi, not the CLI."
+
+# enki_wiring_sheet.py: only show/find/gaps/summary (build, --check and any other mention of the file are denied)
+[[rule]]
+toolName = ["run_shell_command", "ShellTool"]
+argsPattern = 'enki_wiring_sheet(?!\.py (?:(?:show|find) (?:\x27[^\x27\x00]*\x27|\\\"[^\\\"\x00]*\\\"|[A-Za-z0-9_.-]+)|summary|gaps(?: --limit [0-9]+| --status (?:FLOATING|PARTIAL)| --missing [a-z_]+|)(?: --limit [0-9]+| --status (?:FLOATING|PARTIAL)| --missing [a-z_]+|)(?: --limit [0-9]+| --status (?:FLOATING|PARTIAL)| --missing [a-z_]+|))(?:\"| \| | && ))'
+decision = "deny"
+priority = 900
+denyMessage = "Blocked: the wiring sheet may only be run as 'python3 scripts/enki_wiring_sheet.py show ID|NAME', 'find TEXT', 'gaps [--limit N] [--status S] [--missing M]' or 'summary'. Rebuilding it is done by Magi, not the CLI."
+
+# ethan_split.py: only status/plan/copy-code/copy-vault/verify/report and classify [one relative path]
+[[rule]]
+toolName = ["run_shell_command", "ShellTool"]
+argsPattern = 'ethan_split(?!_plan)(?!\.py (?:(?:status|plan|copy-code|copy-vault|verify|report)|classify(?: [A-Za-z0-9_@+][A-Za-z0-9_./@+-]*|))(?:\"| \| | && ))'
+decision = "deny"
+priority = 900
+denyMessage = "Blocked: the split tool may only be run as 'python3 scripts/ethan_split.py status|classify [PATH]|plan|copy-code|copy-vault|verify|report'. It copies; it never moves or deletes."
+
+# read tools: path keys must be workspace-relative or an allowed absolute path
+[[rule]]
+toolName = ["read_file", "read_many_files", "list_directory", "glob", "search_file_content", "grep_search"]
+argsPattern = '\x00"(?:file_path|dir_path|path)":"(?!/(?:(?:home/[^/ \"\x27\\]+/workspace|Users/[^/ \"\x27\\]+/workspace)|(?:tmp|private/tmp|var/folders|private/var/folders)|mnt/GameDrive/twu_scratch)(?:/|\")|/etc/(?:os-release|hostname|lsb-release)\"|/proc/(?:cpuinfo|meminfo|loadavg|version|uptime)\")[/~$\\]'
+decision = "deny"
+priority = 900
+denyMessage = "Blocked: path outside the workspace."
+
+# glob: absolute patterns
+[[rule]]
+toolName = ["glob"]
+argsPattern = '\x00"pattern":"(?!/(?:(?:home/[^/ \"\x27\\]+/workspace|Users/[^/ \"\x27\\]+/workspace)|(?:tmp|private/tmp|var/folders|private/var/folders)|mnt/GameDrive/twu_scratch)(?:/|\")|/etc/(?:os-release|hostname|lsb-release)\"|/proc/(?:cpuinfo|meminfo|loadavg|version|uptime)\")[/~$\\]'
+decision = "deny"
+priority = 900
+denyMessage = "Blocked: path outside the workspace."
+
+# read_many_files: path arrays
+[[rule]]
+toolName = ["read_file", "read_many_files", "list_directory", "glob", "search_file_content", "grep_search"]
+argsPattern = '\x00"(?:include|paths|exclude)":\[[^\x00]*?(?:\[|,)"(?!/(?:(?:home/[^/ \"\x27\\]+/workspace|Users/[^/ \"\x27\\]+/workspace)|(?:tmp|private/tmp|var/folders|private/var/folders)|mnt/GameDrive/twu_scratch)(?:/|\")|/etc/(?:os-release|hostname|lsb-release)\"|/proc/(?:cpuinfo|meminfo|loadavg|version|uptime)\")[/~$\\]'
+decision = "deny"
+priority = 900
+denyMessage = "Blocked: path outside the workspace."
+
+# file tools: '..' in a path key
+[[rule]]
+toolName = ["read_file", "read_many_files", "list_directory", "glob", "search_file_content", "grep_search", "write_file", "replace"]
+argsPattern = '\x00"(?:file_path|dir_path|path|paths|include|pattern|directory)":[^\x00]*(?<![A-Za-z0-9_~^])\.\.(?![A-Za-z0-9_.])'
+decision = "deny"
+priority = 900
+denyMessage = "Blocked: '..' path traversal. Use paths inside the workspace."
+
+# file tools: more secret paths (read side and path keys)
+[[rule]]
+toolName = ["read_file", "read_many_files", "list_directory", "glob", "search_file_content", "grep_search", "write_file", "replace"]
+argsPattern = '\x00"(?:file_path|dir_path|path|paths|include|pattern|exclude|directory)":[^\x00]*(?:\.env(?:\.(?:local|production|prod|development|staging|secret|secrets)|)(?![A-Za-z0-9_.])|\.codex|\.pgpass|/etc/ssl/private|/etc/(?:passwd-|shadow|gshadow|sudoers|polkit-1|crypttab|ssh|wireguard|openvpn|NetworkManager/system-connections)|/proc/(?:[^ \"\x27\\]*/|)(?:environ|mem|maps|cmdline|root|cwd|fd|exe|stack|syscall|mountinfo)|\.mozilla|google-chrome|chromium|BraveSoftware|\.password-store|\.vault-token|\.local/share/keyrings|\.pypirc|\.terraform\.d|\.azure|\.boto|\.s3cfg|\.config/rclone|\.huggingface|\.cache/huggingface|\.ollama|\.openai|\.anthropic|\.git/config|\.git/credentials|(?<![A-Za-z0-9_.-])credentials(?:\.json|)[ \"\x27\\]|(?<![A-Za-z0-9_])tokens?\.(?:json|txt|yaml|yml)|(?<![A-Za-z0-9_])secrets?\.(?:json|ya?ml|toml|env)|\.ppk|\.pfx|\.kdbx|private[_-]?key|Login Data|(?<![A-Za-z0-9_])Cookies[ \"\x27\\]|\.config/[^ \"\x27\\]*(?:token|secret|credential|auth)|\.local/share/[^ \"\x27\\]*(?:token|secret|credential))'
+decision = "deny"
+priority = 900
+denyMessage = "Blocked: this path holds credentials or secrets. Ask Ethan to run this himself if it is really needed."
+
+# file tools: private data directories
+[[rule]]
+toolName = ["read_file", "read_many_files", "list_directory", "glob", "search_file_content", "grep_search", "write_file", "replace"]
+argsPattern = '\x00"(?:file_path|dir_path|path|paths|include|exclude|directory)":[^\x00]*(?:"|[ \"=]|\./|workspace/)(?:profile|business|grants|apply|backups|\.evidence|private|Company_Documents|receipts|invoices|clients|\.stversions|exports|data/sessions|data/session_archive|data/malakopia)(?:/|\"|$)'
+decision = "deny"
+priority = 900
+denyMessage = "Blocked: this folder holds private data (profile, business, grants, backups, evidence). Ask Ethan to run this himself if it is really needed."
+
+# file tools: private data directories in a glob pattern (slash form only; a bare word is a search term)
+[[rule]]
+toolName = ["read_file", "read_many_files", "list_directory", "glob", "search_file_content", "grep_search", "write_file", "replace"]
+argsPattern = '\x00"pattern":"(?:[^\x00]*(?:[ =]|\./|\*/|workspace/|)|)(?:profile|business|grants|apply|backups|\.evidence|private|Company_Documents|receipts|invoices|clients|\.stversions|exports|data/sessions|data/session_archive|data/malakopia)/'
+decision = "deny"
+priority = 900
+denyMessage = "Blocked: this folder holds private data (profile, business, grants, backups, evidence). Ask Ethan to run this himself if it is really needed."
+
+# write tools: target must be an unprotected workspace file
+[[rule]]
+toolName = ["write_file", "replace"]
+argsPattern = '\x00"file_path":"(?!(?:/(?:(?:home/[^/ \"\x27\\]+/workspace|Users/[^/ \"\x27\\]+/workspace)|(?:tmp|private/tmp|var/folders|private/var/folders))/|(?:\./|)[A-Za-z0-9_@+.-]))'
+decision = "deny"
+priority = 900
+denyMessage = "Blocked: writing outside the workspace. Write only inside the workspace."
+
+# write tools: protected targets
+[[rule]]
+toolName = ["write_file", "replace"]
+argsPattern = '\x00"file_path":"[^"\x00]*(?:(?<![A-Za-z0-9_.-])(?:[Aa][Gg][Ee][Nn][Tt][Ss]\.[Mm][Dd]|[Cc][Ll][Aa][Uu][Dd][Ee]\.[Mm][Dd]|[Gg][Ee][Mm][Ii][Nn][Ii]\.[Mm][Dd]|\.[Gg][Ee][Mm][Ii][Nn][Ii](?:/|[ \"\x27\\])|\.[Gg][Ii][Tt](?:/|[ \"\x27\\])|\.[Cc][Oo][Dd][Ee][Xx]|\.[Cc][Ll][Aa][Uu][Dd][Ee]|\.ssh|\.aws|\.gnupg|\.config|\.bashrc|\.bash_profile|\.profile|\.zshrc|\.zprofile|\.zshenv|\.pam_environment|\.xinitrc|\.local/share|ethan(?:[ \"\x27\\]|$)|archive/[^ \"\x27\\]*policy)|[Ee][Tt][Hh][Aa][Nn]_[A-Za-z_]*(?:gemini_policy|policy|guard|alarm|capped_run|sandbox|admin)[A-Za-z_.]*|[Ee][Tt][Hh][Aa][Nn]_[Kk][Nn][Oo][Ww]\.py|policy_(?:bypass_suite|heldout)\.json|check_all_(?:latest\.json|history[A-Za-z._-]*\.jsonl)|[A-Za-z0-9_@-]+\.(?:service|timer|socket|path|mount|plist)(?:[ \"\x27\\]|$)|systemd|LaunchAgents|LaunchDaemons)'
+decision = "deny"
+priority = 900
+denyMessage = "Blocked: this path is protected (policy, guards, instruction files, .gemini, .git, startup files, service units)."
+
+# model memory persistence
+[[rule]]
+toolName = ["save_memory"]
+decision = "deny"
+priority = 900
+denyMessage = "Blocked: persistent memory writes are not allowed from the local model."
+
+# --- allow-all shell (user tier): makes the engine split the command with its tree-sitter bash parser and re-check
+# every sub-command against all deny rules above; a parse error is DENY.  Everything dangerous was denied above.
+[[rule]]
+toolName = ["run_shell_command", "ShellTool"]
+argsPattern = '^\{\x00"command":"'
+decision = "allow"
+priority = 800
+allowRedirection = true
+
+# END GENERATED ALLOWLIST
+
+# --- allow: ordinary file work inside the sandboxed session just goes ---
+# Ethan directed full auto (2026-10-25): no approval prompts for routine file work.
+# This stays safe without the prompt because the outer sandbox confines writes to
+# the workspace, every deny above sits at higher priority inside the elevated
+# admin snapshot, and results land on an isolated guarded git task branch.
+[[rule]]
+toolName = "write_file"
+decision = "allow"
+priority = 800
+
+[[rule]]
+toolName = "replace"
+decision = "allow"
+priority = 800
+
+[[rule]]
+toolName = "read_file"
+decision = "allow"
+priority = 800
+
+[[rule]]
+toolName = "read_many_files"
+decision = "allow"
+priority = 800
+
+[[rule]]
+toolName = "list_directory"
+decision = "allow"
+priority = 800
+
+[[rule]]
+toolName = "glob"
+decision = "allow"
+priority = 800
+
+[[rule]]
+toolName = "search_file_content"
+decision = "allow"
+priority = 800
+
+# --- hard deny: a local model must decide, not interrogate; and it has no web access ---
+[[rule]]
+toolName = "ask_user"
+decision = "deny"
+priority = 900
+denyMessage = "Do not ask questions. Choose the most sensible default, say in one line what you chose, and do the work."
+
+[[rule]]
+toolName = "web_fetch"
+decision = "deny"
+priority = 900
+denyMessage = "No web access from the local model. Work with local files and tools only."
+
+[[rule]]
+toolName = "google_web_search"
+decision = "deny"
+priority = 900
+denyMessage = "No web access from the local model. Work with local files and tools only."

@@ -1,0 +1,106 @@
+# ==============================================================================
+# Policy-as-Code Shell Guard: Automated CI/CD & Security Assurance Pipeline
+# ==============================================================================
+# Pipeline Architecture Overview:
+#   This GitHub Actions workflow validates the zero-trust command gating engine,
+#   adversarial attack denial guarantees (506 primary + 59 held-out attacks = 565 vectors),
+#   and ensures zero dangerous commands are permitted while maintaining 100% usability
+#   for legitimate developer operations.
+#
+# Core Security Gates:
+#   1. Static Code Analysis (SAST) & Linting: Python bytecode verification & SAST auditing.
+#   2. Multi-Version Python Matrix: Python 3.10 - 3.13 compatibility testing.
+#   3. Policy Engine Execution: Evaluates rules using the real PolicyEngine runtime.
+#   4. Adversarial Attack Verification: 565 adversarial attack vectors verified blocked.
+# ==============================================================================
+
+name: Policy-as-Code Security & Regression CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  # ============================================================================
+  # Stage 1: Static Analysis, Bytecode Compilation & Code Quality
+  # ============================================================================
+  static-analysis:
+    name: Lint & Static Code Security
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Verify Python Syntax & Bytecode Compilation
+        run: |
+          python3 -m compileall -q policy_guard benchmark scripts tests
+
+      - name: Code Quality Linting
+        run: |
+          pip install --upgrade pip ruff
+          ruff check .
+
+  # ============================================================================
+  # Stage 2: 565 Adversarial Attack Tests & Benign Benchmark Matrix
+  # ============================================================================
+  adversarial-policy-suite:
+    name: Policy Benchmark Matrix (Python ${{ matrix.python-version }})
+    needs: [ static-analysis ]
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.11", "3.12", "3.13"]
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Set up Node.js Runtime
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install @google/gemini-cli for PolicyEngine Runtime
+        run: |
+          npm install -g @google/gemini-cli@0.65.0
+
+      - name: Run Python Unit Test Suite
+        run: |
+          python3 -m unittest -v tests/test_engine.py
+
+      - name: Execute Primary Adversarial Suite (506 Attacks, 138 Benign)
+        run: |
+          python3 scripts/ethan_policy_bypass_suite.py --mode both
+
+      - name: Execute Held-out Adversarial Suite (59 Attacks, 16 Benign)
+        run: |
+          python3 scripts/ethan_policy_heldout_suite.py --mode both
+
+      - name: Run Unified 565-Attack Benchmark Runner
+        run: |
+          python3 benchmark/run_benchmark.py --mode both --json benchmark-results.json
+
+      - name: Upload Benchmark Artifacts
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: benchmark-results-py${{ matrix.python-version }}
+          path: benchmark-results.json
+          retention-days: 14

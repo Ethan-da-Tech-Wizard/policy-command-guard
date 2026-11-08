@@ -1,0 +1,61 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "policy-command-guard"
+version = "1.0.0"
+description = "Policy-as-code command gating engine denying adversarial shell attacks and enforcing zero-trust execution boundaries."
+readme = "README.md"
+authors = [
+  { name = "Ethan-da-Tech-Wizard", email = "noreply@users.noreply.github.com" }
+]
+license = { text = "MIT" }
+classifiers = [
+  "Development Status :: 5 - Production/Stable",
+  "Intended Audience :: Developers",
+  "Intended Audience :: System Administrators",
+  "License :: OSI Approved :: MIT License",
+  "Operating System :: POSIX :: Linux",
+  "Operating System :: MacOS",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Topic :: Security",
+  "Topic :: Software Development :: Quality Assurance",
+  "Topic :: System :: Systems Administration",
+]
+keywords = [
+  "security",
+  "policy-as-code",
+  "command-guard",
+  "shell-security",
+  "zero-trust",
+  "adversarial-defense",
+  "ast-tokenization",
+  "least-privilege"
+]
+requires-python = ">=3.10"
+dependencies = []
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=7.0.0",
+  "ruff>=0.1.0",
+]
+
+[project.scripts]
+policy-guard = "policy_guard.cli:main"
+run-benchmark = "benchmark.run_benchmark:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["policy_guard*", "benchmark*"]
+
+
+[tool.ruff]
+line-length = 120
+lint.select = ["E", "F", "W"]
+lint.ignore = ["E501"]
