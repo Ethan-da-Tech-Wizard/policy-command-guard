@@ -1,4 +1,10 @@
 #!/usr/bin/env python3
+# ==============================================================================
+# Policy-as-Code Command Evaluation & Shell Bypass Regression Engine
+# ==============================================================================
+# Copyright (c) 2026 Ethan-da-Tech-Wizard <noreply@users.noreply.github.com>, the author.
+# Licensed under the MIT License. See LICENSE for details.
+#
 r"""Policy-as-Code Command Evaluation & Shell Bypass Regression Engine.
 
 ================================================================================

@@ -1,4 +1,10 @@
 #!/usr/bin/env python3
+# ==============================================================================
+# Policy-as-Code Shell Guard: Policy Specification Generator
+# ==============================================================================
+# Copyright (c) 2026 Ethan-da-Tech-Wizard <noreply@users.noreply.github.com>, the author.
+# Licensed under the MIT License. See LICENSE for details.
+#
 r"""Generator for the allowlist section of scripts/ethan_gemini_policy.toml.
 
 Why a generator: Gemini CLI 0.65.0 compiles every argsPattern with JS RegExp and rejects any pattern that

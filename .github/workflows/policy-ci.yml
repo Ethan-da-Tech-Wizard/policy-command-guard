@@ -1,6 +1,9 @@
 # ==============================================================================
 # Policy-as-Code Shell Guard: Automated CI/CD & Security Assurance Pipeline
 # ==============================================================================
+# Copyright (c) 2026 Ethan-da-Tech-Wizard <noreply@users.noreply.github.com>, the author.
+# Licensed under the MIT License. See LICENSE for details.
+#
 # Pipeline Architecture Overview:
 #   This GitHub Actions workflow validates the zero-trust command gating engine,
 #   adversarial attack denial guarantees (506 primary + 59 held-out attacks = 565 vectors),

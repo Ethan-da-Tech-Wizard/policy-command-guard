@@ -265,6 +265,6 @@ The repository includes a production-grade GitHub Actions pipeline (`.github/wor
 
 ## 10. License & Author
 
-- **Author**: Ethan-da-Tech-Wizard (<noreply@users.noreply.github.com>)
+- **Author**: Ethan-da-Tech-Wizard (<noreply@users.noreply.github.com>), the author
 - **Repository**: [Ethan-da-Tech-Wizard/policy-command-guard](https://github.com/Ethan-da-Tech-Wizard/policy-command-guard)
-- **License**: MIT License (see [LICENSE](LICENSE))
+- **License**: MIT License 2026 (see [LICENSE](LICENSE))

@@ -1,3 +1,10 @@
+# ==============================================================================
+# Policy-as-Code Shell Guard: Package Configuration & Build Metadata
+# ==============================================================================
+# Copyright (c) 2026 Ethan-da-Tech-Wizard <noreply@users.noreply.github.com>, the author.
+# Licensed under the MIT License. See LICENSE for details.
+# ==============================================================================
+
 [build-system]
 requires = ["setuptools>=61.0"]
 build-backend = "setuptools.build_meta"
