@@ -12,14 +12,13 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "policy-command-guard"
 version = "1.0.0"
-description = "Policy-as-code command gating engine denying adversarial shell attacks and enforcing zero-trust execution boundaries."
+description = "Python tool for evaluating shell command strings against a policy."
 readme = "README.md"
 authors = [
   { name = "Ethan-da-Tech-Wizard", email = "noreply@users.noreply.github.com" }
 ]
 license = { text = "MIT" }
 classifiers = [
-  "Development Status :: 5 - Production/Stable",
   "Intended Audience :: Developers",
   "Intended Audience :: System Administrators",
   "License :: OSI Approved :: MIT License",
