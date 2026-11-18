@@ -1,15 +1,16 @@
 # ==============================================================================
-# Policy-as-Code Shell Guard: Benchmark Package
-# ==============================================================================
-# Copyright (c) 2026 Ethan-da-Tech-Wizard <noreply@users.noreply.github.com>, the author.
-# Licensed under the MIT License. See LICENSE for details.
-#
-# Educational Architecture Overview:
-# -----------------------------------
-# This package exports datasets, metrics, and runners for the 565-vector
-# adversarial security evaluation of the PolicyEngine.
+# Program: benchmark/__init__.py
+# Programmer: Ethan-da-Tech-Wizard
+# Course: CIS 156 / Advanced Systems
+# Last Modified: November 18, 2026
+# Purpose: Benchmark package initialization exposing benchmark datasets, primary
+#          and held-out attack suites, benign developer control datasets, and
+#          summary diagnostic functions for evaluating policy guard accuracy.
 # ==============================================================================
 
+# ------------------------------------------------------------------------------
+# Import primary and held-out attack suites, benign controls, and telemetry helpers
+# ------------------------------------------------------------------------------
 from .datasets import (
     HELDOUT_ATTACKS,
     HELDOUT_BENIGN,
@@ -20,6 +21,7 @@ from .datasets import (
     get_dataset_summary,
 )
 
+# Export public package symbols
 __all__ = [
     "PRIMARY_ATTACKS",
     "PRIMARY_BENIGN",

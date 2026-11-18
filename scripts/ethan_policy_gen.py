@@ -1,10 +1,13 @@
 #!/usr/bin/env python3
 # ==============================================================================
-# Policy-as-Code Shell Guard: Policy Specification Generator
+# Program: scripts/ethan_policy_gen.py
+# Programmer: Ethan-da-Tech-Wizard
+# Course: CIS 156 / Advanced Systems
+# Last Modified: November 18, 2026
+# Purpose: Declarative TOML policy generator compiling unrolled negative-lookahead
+#          safe regular expression grammars for zero-trust shell execution gating
+#          under Gemini CLI policy engine constraints.
 # ==============================================================================
-# Copyright (c) 2026 Ethan-da-Tech-Wizard <noreply@users.noreply.github.com>, the author.
-# Licensed under the MIT License. See LICENSE for details.
-#
 r"""Generator for the allowlist section of scripts/ethan_gemini_policy.toml.
 
 Why a generator: Gemini CLI 0.65.0 compiles every argsPattern with JS RegExp and rejects any pattern that
@@ -394,22 +397,33 @@ def build_block():
 
 
 def main(argv):
+    """Parse generation options and splice rules into ethan_gemini_policy.toml."""
+    # Step 1: Compile the raw allowlist and deny rule blocks
     block = build_block()
+
+    # Step 2: Read existing policy configuration file
     text = TOML.read_text(encoding="utf-8")
+
+    # Step 3: Splice generated rule block between marker delimiters
     if BEGIN in text and END in text:
         pre = text[:text.index(BEGIN)]
         post = text[text.index(END) + len(END):].lstrip("\n")
         new = pre + block + ("\n" + post if post else "")
     else:
         new = None
+
+    # Step 4: Handle --check flag for continuous integration validation
     if "--check" in argv:
         sys.exit(0 if new == text else 1)
+
+    # Step 5: Handle --write flag to persist changes to disk
     if "--write" in argv:
         if new is None:
             sys.exit("markers missing in toml")
         TOML.write_text(new, encoding="utf-8")
         print("written", len(RULES), "rules")
     else:
+        # Step 6: Print compiled TOML block to stdout
         print(block)
 
 

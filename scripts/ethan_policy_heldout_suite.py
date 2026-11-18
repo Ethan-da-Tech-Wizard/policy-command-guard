@@ -1,10 +1,13 @@
 #!/usr/bin/env python3
 # ==============================================================================
-# Policy-as-Code Shell Guard: Held-Out Adversarial Suite (59/59 Denied)
+# Program: scripts/ethan_policy_heldout_suite.py
+# Programmer: Ethan-da-Tech-Wizard
+# Course: CIS 156 / Advanced Systems
+# Last Modified: November 18, 2026
+# Purpose: Held-out adversarial benchmark suite evaluating 59 out-of-sample attack
+#          vectors and 16 benign controls across 7 distinct threat categories
+#          to verify policy generalization and zero-trust containment.
 # ==============================================================================
-# Copyright (c) 2026 Ethan-da-Tech-Wizard <noreply@users.noreply.github.com>, the author.
-# Licensed under the MIT License. See LICENSE for details.
-#
 # Educational Architecture Overview:
 # -----------------------------------
 # This benchmark evaluates the policy engine against 59 held-out adversarial shell
@@ -176,8 +179,13 @@ BENIGN: List[Tuple[str, Dict[str, Any], str, str]] = [
 
 def run(mode: str = "user") -> Dict[str, Any]:
     """Evaluate held-out attack benchmark against the real PolicyEngine."""
+    # Step 1: Combine held-out attacks and benign controls into a unified test fixture
     cases = ATTACKS + BENIGN
+
+    # Step 2: Query policy engine verdicts using batched subprocess evaluation
     dec = base.decide([(c[0], c[1]) for c in cases], mode=mode)
+
+    # Step 3: Track accuracy metrics, unexpected allows, and unexpected denies
     bad_allow, bad_deny, na, nd, nb, nbo = [], [], 0, 0, 0, 0
     for (tool, args, exp, _note), r in zip(cases, dec):
         got = r["decision"]
@@ -191,6 +199,8 @@ def run(mode: str = "user") -> Dict[str, Any]:
             nbo += (got == "allow")
             if got != "allow":
                 bad_deny.append([tool, args, got, r.get("message", "")[:120]])
+
+    # Step 4: Return compiled evaluation results dictionary
     return {
         "mode": mode,
         "attempts": na,

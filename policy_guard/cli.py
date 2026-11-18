@@ -1,29 +1,13 @@
 #!/usr/bin/env python3
 # ==============================================================================
-# Policy-as-Code Shell Guard: Command-Line Interface (CLI)
-# ==============================================================================
-# Copyright (c) 2026 Ethan-da-Tech-Wizard <noreply@users.noreply.github.com>, the author.
-# Licensed under the MIT License. See LICENSE for details.
-#
-# Educational Architecture Overview:
-# -----------------------------------
-# This CLI provides a lightweight, zero-dependency gateway for pre-execution
-# shell command verification.
-#
-# Integration Use Cases:
-#   1. Pre-Execution Hook in AI Agent Tool Runtimes:
-#      Before an autonomous agent executes a command via `subprocess.run()`,
-#      it queries `policy-guard --json "<command>"`. If the decision is DENY,
-#      the tool invocation is immediately aborted without spawning a shell.
-#   2. Git Pre-Commit / Pre-Push Security Gates:
-#      Verify scripts and build steps before allowing code commits.
-#   3. Interactive Developer Auditing:
-#      Developers can test commands against the policy engine directly in the
-#      terminal with colorized, human-readable feedback.
-#
-# Exit Code Convention:
-#   - 0: Command is explicitly ALLOWED under the active policy.
-#   - 1: Command is DENIED or an evaluation error occurred (fail-closed).
+# Program: policy_guard/cli.py
+# Programmer: Ethan-da-Tech-Wizard
+# Course: CIS 156 / Advanced Systems
+# Last Modified: November 18, 2026
+# Purpose: Command-line interface for policy-as-code shell command evaluation.
+#          Accepts shell command strings via CLI arguments, evaluates them
+#          against zero-trust AST policies, and returns JSON or ANSI colored
+#          verdicts with standard UNIX process exit codes.
 # ==============================================================================
 
 import argparse
@@ -40,6 +24,7 @@ def main() -> int:
         0 if the command passed all zero-trust policy checks and is allowed.
         1 if the command was blocked or violated security constraints.
     """
+    # Step 1: Configure command-line argument parser with descriptive documentation
     parser = argparse.ArgumentParser(
         prog="policy-guard",
         description=(
@@ -49,11 +34,13 @@ def main() -> int:
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
+    # Positional argument: raw command string to evaluate
     parser.add_argument(
         "command",
         nargs="?",
         help="Raw shell command string to evaluate (e.g. 'ls -la && git status').",
     )
+    # Optional flag: machine-readable JSON output for automated toolhooks
     parser.add_argument(
         "--json",
         action="store_true",
@@ -61,17 +48,20 @@ def main() -> int:
     )
     args = parser.parse_args()
 
-    # If no command argument was passed, display usage and exit cleanly
+    # Step 2: If no command argument was passed, display usage instructions and exit cleanly
     if not args.command:
         parser.print_help()
         return 0
 
-    # Instantiate the zero-trust command guard engine
+    # Step 3: Instantiate the zero-trust command guard engine
     guard = PolicyCommandGuard()
+
+    # Step 4: Perform multi-layered security evaluation on the input command
     res = guard.evaluate_shell_command(args.command)
 
-    # Machine-readable output format for automated runners and CI/CD
+    # Step 5: Format and present the evaluation outcome based on requested output mode
     if args.json:
+        # Step 5a: Generate machine-readable JSON dictionary payload
         payload = {
             "command": args.command,
             "decision": res.decision.value,
@@ -83,15 +73,16 @@ def main() -> int:
         }
         print(json.dumps(payload, indent=2))
     else:
-        # Human-readable terminal output with ANSI color highlighting
+        # Step 5b: Render human-readable terminal output with ANSI color highlighting
         status_prefix = "[\033[92mALLOWED\033[0m]" if res.is_allowed else "[\033[91mDENIED\033[0m]"
         print(f"{status_prefix} {args.command}")
         if res.message:
             print(f"  Reason: {res.message}")
 
-    # Enforce standard process exit code: 0 for allowed, 1 for blocked
+    # Step 6: Return standard UNIX exit code (0 for allowed, 1 for blocked/denied)
     return 0 if res.decision == Decision.ALLOW else 1
 
 
 if __name__ == "__main__":
+    # Execute CLI entrypoint and propagate exit status to host shell
     sys.exit(main())

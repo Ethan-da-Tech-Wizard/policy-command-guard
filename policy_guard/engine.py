@@ -1,35 +1,12 @@
 # ==============================================================================
-# Policy-as-Code Shell Guard: AST-Aware Command Evaluation Engine
-# ==============================================================================
-# Copyright (c) 2026 Ethan-da-Tech-Wizard <noreply@users.noreply.github.com>, the author.
-# Licensed under the MIT License. See LICENSE for details.
-#
-# Educational Architecture Overview:
-# -----------------------------------
-# This module implements the core policy-as-code evaluation engine. It protects
-# host systems against adversarial prompt injection, destructive command execution,
-# credential theft, and unauthorized network communications when autonomous agents
-# or untrusted processes are granted shell execution capabilities.
-#
-# Key Defense Pillars:
-#   1. Shell Tokenization & Pipeline Splitting:
-#      Compound commands chained with pipes (`|`), logical operators (`&&`, `||`),
-#      or command terminators (`;`, `\n`) are split into discrete subcommands.
-#      A state-machine tokenizer tracks quote contexts (`'`, `"`) and escape characters
-#      (`\`) to prevent attackers from masking commands inside string literals.
-#   2. Executable De-obfuscation & Normalization:
-#      Attackers frequently bypass simple string matchers using quote slicing (`'r''m'`),
-#      backslash escapes (`\r\m`), ANSI-C quoting (`$'rm'`), or absolute path prefixes
-#      (`/bin/rm`). The engine strips obfuscation to expose the canonical binary name.
-#   3. ReDoS-Safe Path Traversal & Secret Containment:
-#      Uses bounded negative lookbehind/lookahead regular expressions to detect
-#      directory traversal sequences (`..`) without false positives on benign filenames
-#      (e.g. `doc..txt`). All paths are screened against known credential patterns
-#      (`.env`, `.ssh/id_rsa`, `.aws/credentials`, `/etc/shadow`, etc.).
-#   4. Zero-Trust Fail-Closed Gating:
-#      Every subcommand segment in a pipeline must be explicitly permitted by the
-#      verified allowlist. If any segment is unlisted or triggers a deny rule, the
-#      entire command string is blocked before any process execution can occur.
+# Program: policy_guard/engine.py
+# Programmer: Ethan-da-Tech-Wizard
+# Course: CIS 156 / Advanced Systems
+# Last Modified: November 18, 2026
+# Purpose: Core AST-aware shell command evaluation engine implementing zero-trust
+#          execution gating, quote-aware lexical pipeline splitting, executable
+#          de-obfuscation, path traversal detection, credential containment,
+#          and strict fail-closed security enforcement.
 # ==============================================================================
 
 import os
@@ -152,54 +129,57 @@ class ShellTokenizer:
             meaning, but backslash escapes (`\"`) remain active.
           - Backslash (`\`): Escapes the subsequent character outside single quotes.
         """
-        # Strip trailing comments (#) outside of quotes to avoid processing disabled shell code
+        # Step 1: Strip trailing unescaped comments (#) outside of quotes
         clean_str = re.sub(r'(?<!\\)#.*$', '', command_str).strip()
 
+        # Step 2: Initialize token accumulator and quote-state trackers
         segments: List[str] = []
         current_token: List[str] = []
         in_single_quote = False
         in_double_quote = False
         escape_next = False
 
+        # Step 3: Iterate character-by-character through input string
         i = 0
         n = len(clean_str)
         while i < n:
             char = clean_str[i]
 
-            # Handle backslash escapes: the escaped character is preserved literally
+            # Step 3a: Handle backslash escapes (escape character is preserved literally)
             if escape_next:
                 current_token.append(char)
                 escape_next = False
                 i += 1
                 continue
 
+            # Step 3b: Enter escape mode if unquoted backslash encountered
             if char == "\\" and not in_single_quote:
                 escape_next = True
                 current_token.append(char)
                 i += 1
                 continue
 
-            # Toggle single quote state (single quotes ignore all special characters)
+            # Step 3c: Toggle single quote state (single quotes ignore all special characters)
             if char == "'" and not in_double_quote:
                 in_single_quote = not in_single_quote
                 current_token.append(char)
                 i += 1
                 continue
 
-            # Toggle double quote state
+            # Step 3d: Toggle double quote state
             if char == '"' and not in_single_quote:
                 in_double_quote = not in_double_quote
                 current_token.append(char)
                 i += 1
                 continue
 
-            # If inside quotes, characters are literal data and cannot act as pipeline operators
+            # Step 3e: If inside quotes, characters are literal data and cannot act as pipeline operators
             if in_single_quote or in_double_quote:
                 current_token.append(char)
                 i += 1
                 continue
 
-            # Detect two-character chaining operators: '&&' or '||'
+            # Step 3f: Detect two-character chaining operators: '&&' or '||'
             if i + 1 < n and clean_str[i:i+2] in ("&&", "||"):
                 segment_text = "".join(current_token).strip()
                 if segment_text:
@@ -208,7 +188,7 @@ class ShellTokenizer:
                 i += 2
                 continue
 
-            # Detect single-character chaining operators: ';', '|', or newline '\n'
+            # Step 3g: Detect single-character chaining operators: ';', '|', or newline '\n'
             if char in (";", "|", "\n"):
                 segment_text = "".join(current_token).strip()
                 if segment_text:
@@ -217,10 +197,11 @@ class ShellTokenizer:
                 i += 1
                 continue
 
-            # Regular unquoted command character
+            # Step 3h: Regular unquoted command character
             current_token.append(char)
             i += 1
 
+        # Step 4: Append final trailing segment if non-empty
         remainder = "".join(current_token).strip()
         if remainder:
             segments.append(remainder)
@@ -238,10 +219,11 @@ class ShellTokenizer:
         shlex raises a ValueError. In a zero-trust model, malformed syntax is
         treated as an evasion attempt and fails closed to prevent bypasses.
         """
+        # Step 1: Attempt standard POSIX shell lexical tokenization
         try:
             return shlex.split(segment_str, posix=True)
         except ValueError:
-            # Unterminated quotes or invalid escape sequences indicate malformed input
+            # Step 2: Fallback split if quotes or escapes are malformed
             return segment_str.split()
 
     @staticmethod
@@ -259,10 +241,10 @@ class ShellTokenizer:
         This function strips quote marks, dollar prefixes, and path directories,
         leaving the canonical base executable name for allowlist verification.
         """
-        # Remove internal quotes, backslashes, and dollar signs used in variable expansions
+        # Step 1: Remove internal quotes, backslashes, and dollar signs
         cleaned = re.sub(r'[\'\"\\$]', '', raw_word)
 
-        # Extract base executable name from absolute or relative filesystem paths
+        # Step 2: Extract base executable name from filesystem path
         if "/" in cleaned:
             cleaned = os.path.basename(cleaned)
 
@@ -300,6 +282,7 @@ class PathSecurityValidator:
         trigger false positive denials, while directory climbing sequences (`../`, `..`)
         are strictly intercepted.
         """
+        # Step 1: Execute bounded regex pattern matching isolated double-dot sequences
         pattern = r'(?<![A-Za-z0-9_~^])\.\.(?![A-Za-z0-9_.-])'
         return bool(re.search(pattern, target_str))
 
@@ -313,8 +296,10 @@ class PathSecurityValidator:
         by stripping quote characters and backslashes. This prevents bypasses like:
             `cat ~/.s"s"h/id_rsa` -> normalized to `~/.ssh/id_rsa` -> BLOCKED.
         """
+        # Step 1: Normalize target string to defeat character injection/quote obfuscation
         normalized = re.sub(r'[\'\"\\$]', '', target_str)
 
+        # Step 2: Scan normalized string against sensitive credential signatures
         for pat in SENSITIVE_PATH_PATTERNS:
             if re.search(pat, normalized, re.IGNORECASE):
                 return True
@@ -331,15 +316,17 @@ class PathSecurityValidator:
         and temporary build directories (`/tmp`, `/private/tmp`), but denies any path
         that escapes the project boundary.
         """
+        # Step 1: Default to current working directory if no root specified
         if workspace_root is None:
             workspace_root = os.getcwd()
 
         try:
+            # Step 2: Expand user tilde expressions and resolve symlinks
             expanded = os.path.expanduser(path_str)
             resolved = Path(expanded).resolve()
             ws_resolved = Path(workspace_root).resolve()
 
-            # Allowed system read-only exceptions for host diagnostic information
+            # Step 3: Check allowed system read-only diagnostic exceptions
             system_read_exceptions = [
                 Path("/etc/os-release"),
                 Path("/etc/hostname"),
@@ -350,7 +337,7 @@ class PathSecurityValidator:
             if resolved in system_read_exceptions:
                 return True
 
-            # Standard temporary directories used for transient test builds
+            # Step 4: Check standard temporary directories for transient builds
             temp_roots = [Path("/tmp").resolve(), Path("/private/tmp").resolve()]
             for tr in temp_roots:
                 try:
@@ -359,11 +346,11 @@ class PathSecurityValidator:
                 except ValueError:
                     pass
 
-            # Primary verification: must be descendant of workspace root
+            # Step 5: Primary containment check against workspace root
             resolved.relative_to(ws_resolved)
             return True
         except (ValueError, RuntimeError):
-            # Fail closed on resolution failures or permission errors
+            # Step 6: Fail closed on resolution failures or permission errors
             return False
 
 
@@ -397,6 +384,7 @@ class PolicyCommandGuard:
         workspace_dir: Optional[str] = None,
         tier: PolicyTier = PolicyTier.ADMIN,
     ) -> None:
+        # Step 1: Store policy rules, workspace root, and active enforcement tier
         self.rules = list(rules or [])
         self.workspace_dir = workspace_dir or os.getcwd()
         self.tier = tier
@@ -414,8 +402,7 @@ class PolicyCommandGuard:
         Returns:
             An EvaluationResult detailing the decision, matched rule, and reasoning.
         """
-        # Step 1: Check command string length boundary.
-        # Overly long commands (>6000 chars) are denied to mitigate ReDoS and buffer attacks.
+        # Step 1: Check command string length boundary (<6000 chars)
         if len(command_str) > 6000:
             return EvaluationResult(
                 decision=Decision.DENY,
@@ -449,9 +436,10 @@ class PolicyCommandGuard:
         # Step 5: Evaluate each subcommand segment individually
         sub_results: List[EvaluationResult] = []
         for segment in segments:
+            # Step 5a: Run security evaluation on atomic segment
             sub_res = self._evaluate_single_segment(segment)
             sub_results.append(sub_res)
-            # Fail-closed: if any segment in the pipeline is denied, the entire command is denied
+            # Step 5b: Fail-closed - if any segment is denied, abort entire pipeline
             if sub_res.decision == Decision.DENY:
                 return EvaluationResult(
                     decision=Decision.DENY,
@@ -461,7 +449,7 @@ class PolicyCommandGuard:
                     subcommand_results=sub_results,
                 )
 
-        # If all subsegments are evaluated and approved
+        # Step 6: All segments passed - approve command execution
         return EvaluationResult(
             decision=Decision.ALLOW,
             message="Allowed: Command passed all policy AST checks and inspection allowlists.",
@@ -470,8 +458,7 @@ class PolicyCommandGuard:
 
     def _evaluate_single_segment(self, segment_str: str) -> EvaluationResult:
         """Evaluate a single atomic command segment."""
-        # Check for unquoted subshell executions: `...` or $(...)
-        # Subshells execute nested shell processes that bypass static parameter checks.
+        # Step 1: Check for unquoted subshell executions: `...` or $(...)
         if re.search(r'(?<!\\)(?:`|\$\()', segment_str):
             return EvaluationResult(
                 decision=Decision.DENY,
@@ -479,12 +466,12 @@ class PolicyCommandGuard:
                 matched_pattern="subshell_substitution",
             )
 
-        # Check for shell redirection into arbitrary files outside safe temp
+        # Step 2: Check for shell redirection into arbitrary files
         redirection_match = re.search(r'(?:>|>>)\s*([^\s;&|]+)', segment_str)
         if redirection_match:
             target_dest = redirection_match.group(1).strip("'\"")
             if target_dest not in ("/dev/null", "&1", "&2"):
-                # Check if redirection destination is sensitive or attempts credential overwriting
+                # Step 2a: Check if redirection target touches protected secret paths
                 if PathSecurityValidator.accesses_sensitive_secret(target_dest):
                     return EvaluationResult(
                         decision=Decision.DENY,
@@ -492,7 +479,7 @@ class PolicyCommandGuard:
                         matched_pattern="protected_redirect",
                     )
 
-        # Tokenize into shell words
+        # Step 3: Tokenize command segment into shell words
         words = ShellTokenizer.extract_command_words(segment_str)
         if not words:
             return EvaluationResult(
@@ -500,7 +487,7 @@ class PolicyCommandGuard:
                 message="Blocked: Malformed or unparseable command segment.",
             )
 
-        # Filter out leading environment variable assignments (e.g. FOO=1 bar)
+        # Step 4: Filter out leading environment variable assignments (e.g. FOO=1 bar)
         cmd_idx = 0
         while cmd_idx < len(words) and "=" in words[cmd_idx] and not words[cmd_idx].startswith("-"):
             cmd_idx += 1
@@ -511,10 +498,11 @@ class PolicyCommandGuard:
                 message="Blocked: Environment variable definition without executable command.",
             )
 
+        # Step 5: Normalize executable name
         raw_cmd = words[cmd_idx]
         normalized_cmd = ShellTokenizer.normalize_executable_name(raw_cmd)
 
-        # Check critical dangerous binaries (sudo, rm, dd, netcat, etc.)
+        # Step 6: Check critical dangerous binaries (sudo, rm, dd, netcat, etc.)
         if normalized_cmd in CRITICAL_DANGEROUS_BINARIES:
             return EvaluationResult(
                 decision=Decision.DENY,
@@ -522,8 +510,7 @@ class PolicyCommandGuard:
                 matched_pattern=f"critical_binary_{normalized_cmd}",
             )
 
-        # Check arbitrary python execution (-c or -m)
-        # Python `-c` allows arbitrary bytecode evaluation, bypassing shell restrictions.
+        # Step 7: Check arbitrary python execution (-c or -m)
         if normalized_cmd in ("python", "python3"):
             args = words[cmd_idx+1:]
             for i, arg in enumerate(args):
@@ -541,7 +528,7 @@ class PolicyCommandGuard:
                             matched_pattern="python_unauthorized_module",
                         )
 
-        # Check git commands for remote exfiltration or repository destruction
+        # Step 8: Check git commands for remote exfiltration or repository destruction
         if normalized_cmd == "git":
             args = words[cmd_idx+1:]
             # Disallow git commands that reach the network or alter remote refs
@@ -564,7 +551,7 @@ class PolicyCommandGuard:
                         matched_pattern="git_argument_injection",
                     )
 
-        # Check find options that execute commands or delete files
+        # Step 9: Check find options that execute commands or delete files
         if normalized_cmd == "find":
             for arg in words[cmd_idx+1:]:
                 if any(dangerous_flag in arg for dangerous_flag in ("-exec", "-execdir", "-ok", "-okdir", "-delete")):
@@ -574,7 +561,7 @@ class PolicyCommandGuard:
                         matched_pattern="find_exec_delete",
                     )
 
-        # Allowlist verification: only approved read-only or developer commands are permitted
+        # Step 10: Allowlist verification against approved inspection commands
         if normalized_cmd not in ALLOWLISTED_INSPECTION_COMMANDS:
             return EvaluationResult(
                 decision=Decision.DENY,
@@ -582,6 +569,7 @@ class PolicyCommandGuard:
                 matched_pattern=f"unlisted_command_{normalized_cmd}",
             )
 
+        # Step 11: Segment explicitly approved
         return EvaluationResult(
             decision=Decision.ALLOW,
             message=f"Allowed: Subcommand segment '{normalized_cmd}' matches allowlist.",

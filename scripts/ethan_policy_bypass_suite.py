@@ -1,10 +1,13 @@
 #!/usr/bin/env python3
 # ==============================================================================
-# Policy-as-Code Command Evaluation & Shell Bypass Regression Engine
+# Program: scripts/ethan_policy_bypass_suite.py
+# Programmer: Ethan-da-Tech-Wizard
+# Course: CIS 156 / Advanced Systems
+# Last Modified: November 18, 2026
+# Purpose: Comprehensive 506-vector adversarial attack and 138-vector benign
+#          developer control benchmark suite verifying policy compiler rules,
+#          AST shell command tokenization, and anti-tampering containment.
 # ==============================================================================
-# Copyright (c) 2026 Ethan-da-Tech-Wizard <noreply@users.noreply.github.com>, the author.
-# Licensed under the MIT License. See LICENSE for details.
-#
 r"""Policy-as-Code Command Evaluation & Shell Bypass Regression Engine.
 
 ================================================================================
@@ -590,12 +593,15 @@ def gemini_entry() -> Optional[str]:
 
 def wait_for_gpu_window():
     """Pause heavy evaluation if system thermal sentinel indicates concurrent GPU load."""
+    # Step 1: Check environment bypass flag or non-existence of GPU window file
     if os.environ.get("ETHAN_POLICY_SUITE_NO_WAIT") == "1" or not GPU_WINDOW.exists():
         return
+    # Step 2: Establish a 40-minute wait deadline
     deadline = time.time() + 40 * 60
     while GPU_WINDOW.exists() and time.time() < deadline:
         print("GPU_WINDOW present (%s); waiting 60 s" % GPU_WINDOW.read_text().strip()[:80], file=sys.stderr, flush=True)
         time.sleep(60)
+    # Step 3: Abort if system is still saturated after deadline expires
     if GPU_WINDOW.exists():
         sys.exit("GPU_WINDOW still present after 40 minutes; refusing to run heavy batch")
 
@@ -617,10 +623,13 @@ def decide(calls: list, mode: str = "user", policy: Path = POLICY, chunk: int = 
        Results are extracted via the regex `@@RESULT@@(.*)` ensuring debug logs do not
        corrupt JSON deserialization.
     """
+    # Step 1: Initialize results accumulator
     out = []
+    # Step 2: Create temporary sandbox directory for Node runner script and fixtures
     with tempfile.TemporaryDirectory() as d:
         mjs = Path(d, "pe.mjs")
         mjs.write_text(NODE_PE)
+        # Step 3: Iterate through candidate calls in chunks to avoid memory pressure
         for i in range(0, len(calls), chunk):
             part = calls[i:i + chunk]
             cj = Path(d, "calls.json")
@@ -629,6 +638,7 @@ def decide(calls: list, mode: str = "user", policy: Path = POLICY, chunk: int = 
                 for c in part
             ]))
             last = ""
+            # Step 4: Execute Node policy engine with retry logic
             for attempt in range(retries + 1):
                 cmd = ["nice", "-n", "10", "node", str(mjs), gemini_entry(), str(policy), str(cj), mode] + ([str(extra_policy)] if extra_policy else [])
                 p = subprocess.Popen(
@@ -647,12 +657,14 @@ def decide(calls: list, mode: str = "user", policy: Path = POLICY, chunk: int = 
                     last = "node hung > %ss (attempt %d)" % (timeout, attempt + 1)
                     continue
 
+                # Step 5: Extract delimited JSON result from child process stdout
                 m = re.search(r"@@RESULT@@(.*)", so)
                 if p.returncode == 0 and m:
                     out.extend(json.loads(m.group(1)))
                     break
                 last = "rc=%s %s" % (p.returncode, se[-400:])
             else:
+                # Step 6: Fail closed if all retry attempts fail
                 raise RuntimeError("Real policy engine failed: " + last)
     return out
 
@@ -668,11 +680,17 @@ def run(mode: str = "user", verbose: bool = True, extra_policy: Optional[Path] =
       - 506 / 506 Attacks Denied (Zero Unexpected Allows)
       - 138 / 138 Benign Allowed (Zero Unexpected Denies)
     """
+    # Step 1: Wait for system thermal equilibrium before running intensive benchmark
     wait_for_gpu_window()
+
+    # Step 2: Assemble test cases from primary attack vectors and benign controls
     cases = [(c[0], c[1], c[2], c[3] if len(c) > 3 else "") for c in VERIFIER_145 + MINE]
     cases += [(S, {"command": c}, "allow", "benign extra") for c in BENIGN_EXTRA]
+
+    # Step 3: Query policy engine verdicts
     dec = decide([(c[0], c[1]) for c in cases], mode=mode, extra_policy=extra_policy)
 
+    # Step 4: Validate outcomes against ground-truth expectations
     bad_allow, bad_deny, n_att, n_att_den, n_ben, n_ben_ok = [], [], 0, 0, 0, 0
     for (tool, args, exp, note), r in zip(cases, dec):
         got = r["decision"]
@@ -687,6 +705,7 @@ def run(mode: str = "user", verbose: bool = True, extra_policy: Optional[Path] =
             if got != "allow":
                 bad_deny.append((tool, args, got, r["message"]))
 
+    # Step 5: Synthesize telemetry metrics dictionary
     res = {
         "mode": mode,
         "attempts": n_att,
@@ -696,6 +715,7 @@ def run(mode: str = "user", verbose: bool = True, extra_policy: Optional[Path] =
         "unexpected_allows": bad_allow,
         "unexpected_denies": bad_deny,
     }
+    # Step 6: Optionally print human-readable summary to console
     if verbose:
         print("[%s] attacks denied %d/%d, benign allowed %d/%d" % (mode, n_att_den, n_att, n_ben_ok, n_ben))
         for b in bad_allow:

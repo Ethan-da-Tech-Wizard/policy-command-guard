@@ -1,11 +1,11 @@
 # ==============================================================================
-# Policy-as-Code Shell Guard: Test Suite Package
+# Program: tests/__init__.py
+# Programmer: Ethan-da-Tech-Wizard
+# Course: CIS 156 / Advanced Systems
+# Last Modified: November 18, 2026
+# Purpose: Test package entrypoint for PolicyCommandGuard regression suites.
+#          Initializes test discovery namespaces across unit tests, the 506-case
+#          primary bypass dataset, and the 59-case held-out adversarial dataset.
 # ==============================================================================
-# Copyright (c) 2026 Ethan-da-Tech-Wizard <noreply@users.noreply.github.com>, the author.
-# Licensed under the MIT License. See LICENSE for details.
-#
-# Educational Architecture Overview:
-# -----------------------------------
-# Contains regression tests for core unit components, the 506 primary attack
-# vectors, and the 59 held-out out-of-sample attack vectors.
-# ==============================================================================
+
+# Mark tests directory as an importable Python test package

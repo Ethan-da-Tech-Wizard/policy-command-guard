@@ -1,29 +1,11 @@
 # ==============================================================================
-# Policy-as-Code Shell Guard: Data Models & Decision Structures
-# ==============================================================================
-# Copyright (c) 2026 Ethan-da-Tech-Wizard <noreply@users.noreply.github.com>, the author.
-# Licensed under the MIT License. See LICENSE for details.
-#
-# Educational Architecture Overview:
-# -----------------------------------
-# This module defines the core data representations for declarative policy rules,
-# hierarchical evaluation tiers, and structured evaluation outcomes.
-#
-# Key Concepts:
-#   1. Zero-Trust Decision Outcomes (Decision):
-#      - ALLOW: The command or tool call is strictly within the approved grammar.
-#      - DENY: The command violates safety constraints or fails to match any allowlist.
-#      - ASK_USER: Interactive confirmation required for high-impact bounded operations.
-#   2. Two-Tier Hierarchical Enforcement (PolicyTier):
-#      - ADMIN: Immutable, non-overridable security boundaries established at system
-#        startup. In launcher mode, deny rules are snapshotted into this tier so no
-#        user-level policy configuration can override an administrative restriction.
-#      - USER: Workspace-level or developer-scoped rules governing everyday workflows.
-#   3. AST Composite Result Propagation (EvaluationResult):
-#      - When a compound pipeline command (e.g. `ls -la && rm -rf /`) is evaluated,
-#        each individual AST subcommand produces an EvaluationResult.
-#      - The root EvaluationResult aggregates all sub-verdicts under a fail-closed
-#        policy: if any subcommand returns DENY, the entire pipeline is DENIED.
+# Program: policy_guard/models.py
+# Programmer: Ethan-da-Tech-Wizard
+# Course: CIS 156 / Advanced Systems
+# Last Modified: November 18, 2026
+# Purpose: Define zero-trust data representations, hierarchical policy tiers,
+#          immutable declarative rule contracts, and composite evaluation result
+#          structures for shell command execution gating.
 # ==============================================================================
 
 from dataclasses import dataclass, field
@@ -41,8 +23,11 @@ class Decision(str, Enum):
     unambiguous rule validates every component of the requested operation.
     """
 
+    # Unconditionally approve command execution within approved grammar
     ALLOW = "allow"
+    # Block execution due to security policy violation or unlisted command
     DENY = "deny"
+    # Prompt the human operator for explicit confirmation before running
     ASK_USER = "ask_user"
 
 
@@ -61,7 +46,9 @@ class PolicyTier(str, Enum):
         within a specific repository workspace).
     """
 
+    # System-level root policy tier with immutable deny rules
     ADMIN = "admin"
+    # Workspace-level developer policy tier for contextual workflows
     USER = "user"
 
 
@@ -74,7 +61,7 @@ class PolicyRule:
         decision: The verdict to apply when the rule matches (ALLOW, DENY, ASK_USER).
         priority: Numerical priority (higher values evaluate first; Admin rules use >=900).
         args_pattern: Regular expression or grammar string matching serialized tool arguments.
-                      Serialized arguments use NUL (\x00) boundary wrapping to prevent
+                      Serialized arguments use NUL (\\x00) boundary wrapping to prevent
                       parameter injection attacks.
         deny_message: Explanatory error message returned to the caller when a DENY rule triggers.
         allow_redirection: Boolean indicating if subshell splitting and AST decomposition
@@ -82,12 +69,19 @@ class PolicyRule:
         metadata: Arbitrary contextual attributes (e.g. threat category, author, timestamp).
     """
 
+    # Target tool identifier (e.g., "run_shell_command", "ShellTool")
     tool_name: str
+    # Evaluation verdict produced upon successful rule match
     decision: Decision
+    # Evaluation precedence priority (higher integers evaluated first)
     priority: int = 500
+    # Serialized argument regex pattern with zero-trust NUL delimiters
     args_pattern: Optional[str] = None
+    # Descriptive explanation delivered to client upon policy block
     deny_message: Optional[str] = None
+    # Flag enabling pipeline segmentation and recursive token inspection
     allow_redirection: bool = False
+    # Contextual metadata dictionary for auditing and telemetry
     metadata: Dict[str, Any] = field(default_factory=dict)
 
 
@@ -105,18 +99,25 @@ class EvaluationResult:
                             individual EvaluationResult for each constituent AST segment.
     """
 
+    # Composite decision verdict for the command invocation
     decision: Decision
+    # Reference to the matching policy rule that triggered the outcome
     rule: Optional[PolicyRule] = None
+    # Informative audit reason or security diagnostic message
     message: Optional[str] = None
+    # Specific vulnerability signature or pattern identifier that fired
     matched_pattern: Optional[str] = None
+    # Nested evaluation results for all decomposed AST pipeline segments
     subcommand_results: List["EvaluationResult"] = field(default_factory=list)
 
     @property
     def is_allowed(self) -> bool:
         """Convenience property returning True if the command passed all policy checks."""
+        # Step 1: Compare decision against ALLOW enum state
         return self.decision == Decision.ALLOW
 
     @property
     def is_denied(self) -> bool:
         """Convenience property returning True if the command was blocked."""
+        # Step 1: Compare decision against DENY enum state
         return self.decision == Decision.DENY
