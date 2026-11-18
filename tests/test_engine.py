@@ -1,3 +1,8 @@
+# Program: policy-command-guard - test_engine.py
+# Programmer: Ethan-da-Tech-Wizard (written with Claude, an AI assistant)
+# Last Modified: 2026-11-18
+# Purpose: Unit tests for the Python engine: pipeline splitting, name normalization, traversal and secret detection, and whole-command verdicts.
+#
 # ==============================================================================
 # Policy-as-Code Shell Guard: Unit Tests for Core Engine & AST Components
 # ==============================================================================
@@ -18,6 +23,7 @@
 #   5. PolicyCommandGuard.evaluate_shell_command: Verifies end-to-end gating of critical
 #      binaries, python evaluation escapes, git injection, and benign inspection commands.
 # ==============================================================================
+"""Unit tests for the core engine."""
 
 import sys
 import unittest

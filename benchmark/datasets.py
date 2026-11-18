@@ -1,3 +1,8 @@
+# Program: policy-command-guard - datasets.py
+# Programmer: Ethan-da-Tech-Wizard (written with Claude, an AI assistant)
+# Last Modified: 2026-11-18
+# Purpose: Builds the primary and held-out attack and benign command lists from the two suite scripts and offers a function that counts them.
+#
 # ==============================================================================
 # Policy-as-Code Shell Guard: Benchmark Dataset Definition
 # ==============================================================================
@@ -37,12 +42,13 @@
 #   - Total Benign Controls:    154 / 154 ALLOWED (100.0% pass rate)
 #   - Dangerous Commands Run:   0 (ZERO EXECUTION GUARANTEE)
 # ==============================================================================
+"""Benchmark datasets: attack and benign command collections plus a summary function."""
 
 import sys
 from pathlib import Path
 from typing import Any, Dict, List, Tuple
 
-# Resolve repository paths for cross-module imports
+# Resolve repository paths for cross-module imports (so the suite scripts can be imported)
 HERE = Path(__file__).resolve().parent
 REPO = HERE.parent
 sys.path.insert(0, str(REPO / "scripts"))
@@ -53,12 +59,14 @@ import ethan_policy_heldout_suite as heldout_suite  # noqa: E402
 # ------------------------------------------------------------------------------
 # Primary Benchmark Suite: 506 Adversarial Attacks & 138 Benign Controls
 # ------------------------------------------------------------------------------
+# Keep only the cases expected to be denied; pad every tuple to 4 items (note may be missing)
 PRIMARY_ATTACKS: List[Tuple[str, Dict[str, Any], str, str]] = [
     (c[0], c[1], c[2], c[3] if len(c) > 3 else "")
     for c in bypass_suite.VERIFIER_145 + bypass_suite.MINE
     if c[2] == "deny"
 ]
 
+# Cases expected to be allowed, plus the extra benign commands wrapped as shell tool calls
 PRIMARY_BENIGN: List[Tuple[str, Dict[str, Any], str, str]] = [
     (c[0], c[1], c[2], c[3] if len(c) > 3 else "")
     for c in bypass_suite.VERIFIER_145 + bypass_suite.MINE

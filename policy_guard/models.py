@@ -1,3 +1,8 @@
+# Program: policy-command-guard - models.py
+# Programmer: Ethan-da-Tech-Wizard (written with Claude, an AI assistant)
+# Last Modified: 2026-11-18
+# Purpose: Defines the small data types (Decision, PolicyTier, PolicyRule, EvaluationResult) that the engine and CLI use to describe rules and verdicts.
+#
 # ==============================================================================
 # Policy-as-Code Shell Guard: Data Models & Decision Structures
 # ==============================================================================
@@ -25,6 +30,7 @@
 #      - The root EvaluationResult aggregates all sub-verdicts under a fail-closed
 #        policy: if any subcommand returns DENY, the entire pipeline is DENIED.
 # ==============================================================================
+"""Data models for policy decisions, tiers, rules, and evaluation results."""
 
 from dataclasses import dataclass, field
 from enum import Enum

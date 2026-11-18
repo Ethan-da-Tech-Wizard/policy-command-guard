@@ -1,4 +1,9 @@
 #!/usr/bin/env python3
+# Program: policy-command-guard - cli.py
+# Programmer: Ethan-da-Tech-Wizard (written with Claude, an AI assistant)
+# Last Modified: 2026-11-18
+# Purpose: Command-line front end that sends one shell command string to the guard and prints or exits with an allow/deny result.
+#
 # ==============================================================================
 # Policy-as-Code Shell Guard: Command-Line Interface (CLI)
 # ==============================================================================
@@ -25,6 +30,7 @@
 #   - 0: Command is explicitly ALLOWED under the active policy.
 #   - 1: Command is DENIED or an evaluation error occurred (fail-closed).
 # ==============================================================================
+"""Command-line interface for the policy guard."""
 
 import argparse
 import json

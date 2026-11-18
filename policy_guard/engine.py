@@ -1,3 +1,8 @@
+# Program: policy-command-guard - engine.py
+# Programmer: Ethan-da-Tech-Wizard (written with Claude, an AI assistant)
+# Last Modified: 2026-11-18
+# Purpose: Core evaluation engine: splits a shell command into segments, normalizes executable names, checks paths and secrets, and returns allow or deny against built-in lists.
+#
 # ==============================================================================
 # Policy-as-Code Shell Guard: AST-Aware Command Evaluation Engine
 # ==============================================================================
@@ -31,6 +36,7 @@
 #      verified allowlist. If any segment is unlisted or triggers a deny rule, the
 #      entire command string is blocked before any process execution can occur.
 # ==============================================================================
+"""Core policy evaluation engine: tokenizer, path validator, and the guard class."""
 
 import os
 import re
@@ -397,8 +403,12 @@ class PolicyCommandGuard:
         workspace_dir: Optional[str] = None,
         tier: PolicyTier = PolicyTier.ADMIN,
     ) -> None:
+        """Store the optional rules, the workspace folder, and the enforcement tier."""
+        # Keep our own copy of the rules list (an empty list if none were given)
         self.rules = list(rules or [])
+        # Default the workspace to the folder the program was started in
         self.workspace_dir = workspace_dir or os.getcwd()
+        # Remember which tier (ADMIN or USER) this guard enforces
         self.tier = tier
 
     def evaluate_shell_command(self, command_str: str) -> EvaluationResult:
@@ -501,6 +511,7 @@ class PolicyCommandGuard:
             )
 
         # Filter out leading environment variable assignments (e.g. FOO=1 bar)
+        # cmd_idx ends up pointing at the first word that is the real program name.
         cmd_idx = 0
         while cmd_idx < len(words) and "=" in words[cmd_idx] and not words[cmd_idx].startswith("-"):
             cmd_idx += 1
@@ -511,6 +522,7 @@ class PolicyCommandGuard:
                 message="Blocked: Environment variable definition without executable command.",
             )
 
+        # Take the program name as typed, then strip quotes/paths so 'r""m' or /bin/rm becomes rm
         raw_cmd = words[cmd_idx]
         normalized_cmd = ShellTokenizer.normalize_executable_name(raw_cmd)
 
@@ -574,7 +586,7 @@ class PolicyCommandGuard:
                         matched_pattern="find_exec_delete",
                     )
 
-        # Allowlist verification: only approved read-only or developer commands are permitted
+        # Allowlist verification (default deny): only approved read-only or developer commands are permitted
         if normalized_cmd not in ALLOWLISTED_INSPECTION_COMMANDS:
             return EvaluationResult(
                 decision=Decision.DENY,

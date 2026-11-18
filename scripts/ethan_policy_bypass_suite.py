@@ -1,4 +1,9 @@
 #!/usr/bin/env python3
+# Program: policy-command-guard - ethan_policy_bypass_suite.py
+# Programmer: Ethan-da-Tech-Wizard (written with Claude, an AI assistant)
+# Last Modified: 2026-11-18
+# Purpose: Holds the primary list of attack and benign shell tool calls and a harness that sends them through the real Gemini CLI policy engine (via node) to count denies and allows.
+#
 # ==============================================================================
 # Policy-as-Code Command Evaluation & Shell Bypass Regression Engine
 # ==============================================================================
@@ -73,7 +78,7 @@ from typing import Optional
 # SECTION 1: PATH CONFIGURATION & EXECUTION CONSTANTS
 # ==============================================================================
 
-# Directory where this script resides
+# Directory where this script resides (resolve() makes the path absolute)
 HERE = Path(__file__).resolve().parent
 
 # Root directory of the repository
@@ -573,6 +578,7 @@ def gemini_entry() -> Optional[str]:
       2. System PATH via `which gemini`
       3. Global npm node_modules on Linux and macOS
     """
+    # Candidate locations, tried in order; the first one that exists wins
     cands = [
         os.environ.get("ETHAN_GEMINI_ENTRY"),
         shutil.which("gemini"),
@@ -580,8 +586,10 @@ def gemini_entry() -> Optional[str]:
         "/usr/lib/node_modules/@google/gemini-cli/bundle/gemini.js",
         "/usr/local/lib/node_modules/@google/gemini-cli/bundle/gemini.js",
     ]
+    # Also search every user's global npm folder (wildcards match any user name)
     cands.extend(glob.glob(os.path.join("/home", "*", ".npm-global", "lib", "node_modules", "@google", "gemini-cli", "bundle", "gemini.js")))
     cands.extend(glob.glob(os.path.join("/Users", "*", ".npm-global", "lib", "node_modules", "@google", "gemini-cli", "bundle", "gemini.js")))
+    # Return the first candidate that really exists, or None if the CLI is not installed
     for c in cands:
         if c and os.path.exists(c):
             return os.path.realpath(c)
@@ -592,6 +600,7 @@ def wait_for_gpu_window():
     """Pause heavy evaluation if system thermal sentinel indicates concurrent GPU load."""
     if os.environ.get("ETHAN_POLICY_SUITE_NO_WAIT") == "1" or not GPU_WINDOW.exists():
         return
+    # Wait at most 40 minutes (in seconds), checking once a minute
     deadline = time.time() + 40 * 60
     while GPU_WINDOW.exists() and time.time() < deadline:
         print("GPU_WINDOW present (%s); waiting 60 s" % GPU_WINDOW.read_text().strip()[:80], file=sys.stderr, flush=True)
@@ -617,10 +626,12 @@ def decide(calls: list, mode: str = "user", policy: Path = POLICY, chunk: int = 
        Results are extracted via the regex `@@RESULT@@(.*)` ensuring debug logs do not
        corrupt JSON deserialization.
     """
-    out = []
+    out = []  # collected decisions, one per input call, in order
+    # A throwaway folder holds the node script and the batch input; it is deleted automatically
     with tempfile.TemporaryDirectory() as d:
         mjs = Path(d, "pe.mjs")
         mjs.write_text(NODE_PE)
+        # Walk through the calls one batch (chunk) at a time
         for i in range(0, len(calls), chunk):
             part = calls[i:i + chunk]
             cj = Path(d, "calls.json")
@@ -628,7 +639,8 @@ def decide(calls: list, mode: str = "user", policy: Path = POLICY, chunk: int = 
                 {"name": c[0], "args": c[1], "server": c[2] if len(c) > 2 else None}
                 for c in part
             ]))
-            last = ""
+            last = ""  # text describing the most recent failure, used if all retries fail
+            # Try each batch up to retries+1 times before giving up
             for attempt in range(retries + 1):
                 cmd = ["nice", "-n", "10", "node", str(mjs), gemini_entry(), str(policy), str(cj), mode] + ([str(extra_policy)] if extra_policy else [])
                 p = subprocess.Popen(
@@ -647,6 +659,7 @@ def decide(calls: list, mode: str = "user", policy: Path = POLICY, chunk: int = 
                     last = "node hung > %ss (attempt %d)" % (timeout, attempt + 1)
                     continue
 
+                # Pull the JSON out of the marker line; other node output is ignored
                 m = re.search(r"@@RESULT@@(.*)", so)
                 if p.returncode == 0 and m:
                     out.extend(json.loads(m.group(1)))
@@ -669,11 +682,14 @@ def run(mode: str = "user", verbose: bool = True, extra_policy: Optional[Path] =
       - 138 / 138 Benign Allowed (Zero Unexpected Denies)
     """
     wait_for_gpu_window()
+    # Build the full case list: attack/control tuples first, then the extra benign commands
     cases = [(c[0], c[1], c[2], c[3] if len(c) > 3 else "") for c in VERIFIER_145 + MINE]
     cases += [(S, {"command": c}, "allow", "benign extra") for c in BENIGN_EXTRA]
     dec = decide([(c[0], c[1]) for c in cases], mode=mode, extra_policy=extra_policy)
 
+    # Counters: unexpected allows/denies plus attack and benign totals
     bad_allow, bad_deny, n_att, n_att_den, n_ben, n_ben_ok = [], [], 0, 0, 0, 0
+    # Compare each expected verdict with what the engine actually returned
     for (tool, args, exp, note), r in zip(cases, dec):
         got = r["decision"]
         if exp == "deny":
@@ -687,6 +703,7 @@ def run(mode: str = "user", verbose: bool = True, extra_policy: Optional[Path] =
             if got != "allow":
                 bad_deny.append((tool, args, got, r["message"]))
 
+    # Package the counts and any mismatches for the caller
     res = {
         "mode": mode,
         "attempts": n_att,
@@ -705,6 +722,7 @@ def run(mode: str = "user", verbose: bool = True, extra_policy: Optional[Path] =
     return res
 
 
+# Command-line entry point: --mode user|launcher|both and an optional --json <file>
 if __name__ == "__main__":
     a = sys.argv[1:]
     mode = a[a.index("--mode") + 1] if "--mode" in a else "both"

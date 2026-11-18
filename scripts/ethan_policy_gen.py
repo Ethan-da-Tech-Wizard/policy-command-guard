@@ -1,4 +1,9 @@
 #!/usr/bin/env python3
+# Program: policy-command-guard - ethan_policy_gen.py
+# Programmer: Ethan-da-Tech-Wizard (written with Claude, an AI assistant)
+# Last Modified: 2026-11-18
+# Purpose: Generates the deny-only allowlist rules from regex building blocks and splices them into scripts/ethan_gemini_policy.toml (--write) or checks the file is current (--check).
+#
 # ==============================================================================
 # Policy-as-Code Shell Guard: Policy Specification Generator
 # ==============================================================================
@@ -84,6 +89,7 @@ PROT = ("(?:(?<![A-Za-z0-9_.-])(?:" + ci("AGENTS.md") + "|" + ci("CLAUDE.md") + 
 
 
 def lone(*alts):
+    """Join the given regex alternatives into one non-capturing group, e.g. (?:a|b)."""
     return "(?:" + "|".join(alts) + ")"
 
 
@@ -96,6 +102,7 @@ RULES = []   # (comment, toolName_toml, pattern, message)
 
 
 def rule(comment, pattern, message, tool=SH):
+    """Queue one deny rule (comment, tool name, regex pattern, message) in RULES."""
     # `.*` must not run past the command value into description/dir_path text (false denies); NUL ends every value.
     RULES.append((comment, tool, pattern.replace(".*", r"[^\x00]*"), message))
 
@@ -363,8 +370,11 @@ rule("model memory persistence", r"", "Blocked: persistent memory writes are not
 
 
 def build_block():
+    """Return the full generated TOML text (begin marker, every deny rule, allow-all rule, end marker)."""
+    # Start with the begin marker and explanatory comment lines
     out = [BEGIN, "# Primary control: deny-only negative lookaheads (see scripts/ethan_policy_gen.py docstring).",
            '# Guarded git commands the grammar allows: "ethan git status" "ethan git begin" "ethan git stage" "ethan git verify" "ethan git finish" "ethan git undo-last"', ""]
+    # Turn each queued rule into one [[rule]] table, checking the pattern is safe first
     for comment, tool, pat, msg in RULES:
         assert "'" not in pat, pat[:80]
         assert len(pat) < 2048, (len(pat), comment)
@@ -378,6 +388,7 @@ def build_block():
         out.append("priority = 900")
         out.append('denyMessage = "' + msg.replace('"', "'") + '"')
         out.append("")
+    # Finally add the allow-all rule (lower priority than the deny rules) and the end marker
     out += [
         "# --- allow-all shell (user tier): makes the engine split the command with its tree-sitter bash parser and re-check",
         "# every sub-command against all deny rules above; a parse error is DENY.  Everything dangerous was denied above.",
@@ -394,14 +405,17 @@ def build_block():
 
 
 def main(argv):
+    """Command-line entry: print the block, splice it into the TOML (--write), or compare (--check)."""
     block = build_block()
     text = TOML.read_text(encoding="utf-8")
+    # If both markers exist, replace everything between them with the fresh block
     if BEGIN in text and END in text:
         pre = text[:text.index(BEGIN)]
         post = text[text.index(END) + len(END):].lstrip("\n")
         new = pre + block + ("\n" + post if post else "")
     else:
         new = None
+    # --check: exit 0 when the file already matches, 1 when it is out of date (used by CI)
     if "--check" in argv:
         sys.exit(0 if new == text else 1)
     if "--write" in argv:

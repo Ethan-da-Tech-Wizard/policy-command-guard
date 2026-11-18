@@ -1,3 +1,8 @@
+# Program: policy-command-guard - __init__.py
+# Programmer: Ethan-da-Tech-Wizard (written with Claude, an AI assistant)
+# Last Modified: 2026-11-18
+# Purpose: Package marker that lets the unittest runner discover the test modules in this folder.
+#
 # ==============================================================================
 # Policy-as-Code Shell Guard: Test Suite Package
 # ==============================================================================

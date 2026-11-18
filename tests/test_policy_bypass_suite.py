@@ -1,3 +1,8 @@
+# Program: policy-command-guard - test_policy_bypass_suite.py
+# Programmer: Ethan-da-Tech-Wizard (written with Claude, an AI assistant)
+# Last Modified: 2026-11-18
+# Purpose: Regression tests that check the primary suite has the expected counts and that every attack is denied and every benign command allowed in user and launcher modes.
+#
 # ==============================================================================
 # Policy-as-Code Shell Guard: Primary Suite (506 Attacks) Regression Tests
 # ==============================================================================
@@ -17,6 +22,7 @@
 #   3. Launcher Admin-Snapshot Tier: Verifies that admin snapshotting preserves all deny
 #      rules and provides identical zero-trust guarantees against shadowed configurations.
 # ==============================================================================
+"""Regression tests for the primary bypass suite."""
 
 import sys
 import unittest

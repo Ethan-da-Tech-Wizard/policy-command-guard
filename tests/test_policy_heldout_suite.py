@@ -1,3 +1,8 @@
+# Program: policy-command-guard - test_policy_heldout_suite.py
+# Programmer: Ethan-da-Tech-Wizard (written with Claude, an AI assistant)
+# Last Modified: 2026-11-18
+# Purpose: Regression tests that check the held-out suite counts and that all attacks are denied and all benign commands allowed in user and launcher modes.
+#
 # ==============================================================================
 # Policy-as-Code Shell Guard: Held-Out Suite (59 Attacks) Regression Tests
 # ==============================================================================
@@ -23,6 +28,7 @@
 #   - Zero unexpected denies (0/16 benign controls denied -> 100% usability).
 #   - Identical guarantees under User and Launcher (Admin) tiers.
 # ==============================================================================
+"""Regression tests for the held-out suite."""
 
 import sys
 import unittest

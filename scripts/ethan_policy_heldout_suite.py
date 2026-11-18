@@ -1,4 +1,9 @@
 #!/usr/bin/env python3
+# Program: policy-command-guard - ethan_policy_heldout_suite.py
+# Programmer: Ethan-da-Tech-Wizard (written with Claude, an AI assistant)
+# Last Modified: 2026-11-18
+# Purpose: Defines 59 held-out attack and 16 benign shell calls and a run function that evaluates them through the bypass suite's policy harness.
+#
 # ==============================================================================
 # Policy-as-Code Shell Guard: Held-Out Adversarial Suite (59/59 Denied)
 # ==============================================================================
@@ -33,6 +38,7 @@
 #   - Benign controls allowed: 16/16 (100% pass rate)
 #   - Zero dangerous commands permitted to execute
 # ==============================================================================
+"""Held-out adversarial suite and runner."""
 
 import json
 import sys
@@ -176,9 +182,12 @@ BENIGN: List[Tuple[str, Dict[str, Any], str, str]] = [
 
 def run(mode: str = "user") -> Dict[str, Any]:
     """Evaluate held-out attack benchmark against the real PolicyEngine."""
+    # One combined list so every case goes through the engine in the same batch
     cases = ATTACKS + BENIGN
     dec = base.decide([(c[0], c[1]) for c in cases], mode=mode)
+    # na/nd: attacks seen/denied; nb/nbo: benign seen/allowed; bad_* collect mismatches
     bad_allow, bad_deny, na, nd, nb, nbo = [], [], 0, 0, 0, 0
+    # Compare expected verdicts with the engine's answers (zip pairs them in order)
     for (tool, args, exp, _note), r in zip(cases, dec):
         got = r["decision"]
         if exp == "deny":
@@ -202,6 +211,7 @@ def run(mode: str = "user") -> Dict[str, Any]:
     }
 
 
+# Command-line entry point: --mode user|launcher|both and an optional --json <file>
 if __name__ == "__main__":
     a = sys.argv[1:]
     mode = a[a.index("--mode") + 1] if "--mode" in a else "both"

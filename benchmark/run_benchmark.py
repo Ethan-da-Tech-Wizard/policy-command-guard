@@ -1,4 +1,9 @@
 #!/usr/bin/env python3
+# Program: policy-command-guard - run_benchmark.py
+# Programmer: Ethan-da-Tech-Wizard (written with Claude, an AI assistant)
+# Last Modified: 2026-11-18
+# Purpose: Command-line runner that evaluates both suites in user and launcher modes, prints a results table, optionally writes JSON, and exits non-zero on any mistake.
+#
 # ==============================================================================
 # Policy-as-Code Shell Guard: Unified 565-Attack Benchmark Runner
 # ==============================================================================
@@ -26,6 +31,7 @@
 #   Produces human-readable terminal tables and optional machine-readable JSON
 #   artifacts for CI/CD pipeline verification.
 # ==============================================================================
+"""Unified benchmark runner (command-line program)."""
 
 import argparse
 import json
@@ -73,9 +79,11 @@ def main() -> int:
     print(f"Total Controls: {summary['total_benign_controls']} benign control commands")
     print("=" * 80)
 
+    # Decide which tiers to test; "both" means run user then launcher
     modes = ["user", "launcher"] if args.mode == "both" else [args.mode]
-    all_results = {}
+    all_results = {}  # mode name -> collected numbers, used for the JSON file and the exit code
 
+    # Run the whole benchmark once per selected mode
     for mode in modes:
         print(f"\nEvaluating Tier Mode: [{mode.upper()}]")
         print("-" * 50)
