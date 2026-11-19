@@ -1,7 +1,6 @@
 # ==============================================================================
 # Program: tests/test_policy_bypass_suite.py
 # Programmer: Ethan-da-Tech-Wizard
-# Course: CIS 156 / Advanced Systems
 # Last Modified: November 18, 2026
 # Purpose: Regression test suite for the primary 506-vector adversarial attack
 #          and 138-vector benign developer control benchmark dataset across User

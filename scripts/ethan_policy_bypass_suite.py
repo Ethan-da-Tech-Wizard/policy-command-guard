@@ -2,7 +2,6 @@
 # ==============================================================================
 # Program: scripts/ethan_policy_bypass_suite.py
 # Programmer: Ethan-da-Tech-Wizard
-# Course: CIS 156 / Advanced Systems
 # Last Modified: November 18, 2026
 # Purpose: Comprehensive 506-vector adversarial attack and 138-vector benign
 #          developer control benchmark suite verifying policy compiler rules,

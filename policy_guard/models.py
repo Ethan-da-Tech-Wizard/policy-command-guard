@@ -1,7 +1,6 @@
 # ==============================================================================
 # Program: policy_guard/models.py
 # Programmer: Ethan-da-Tech-Wizard
-# Course: CIS 156 / Advanced Systems
 # Last Modified: November 18, 2026
 # Purpose: Define zero-trust data representations, hierarchical policy tiers,
 #          immutable declarative rule contracts, and composite evaluation result

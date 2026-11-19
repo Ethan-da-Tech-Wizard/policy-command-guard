@@ -2,7 +2,6 @@
 # ==============================================================================
 # Program: scripts/ethan_policy_heldout_suite.py
 # Programmer: Ethan-da-Tech-Wizard
-# Course: CIS 156 / Advanced Systems
 # Last Modified: November 18, 2026
 # Purpose: Held-out adversarial benchmark suite evaluating 59 out-of-sample attack
 #          vectors and 16 benign controls across 7 distinct threat categories

@@ -1,7 +1,6 @@
 # ==============================================================================
 # Program: benchmark/datasets.py
 # Programmer: Ethan-da-Tech-Wizard
-# Course: CIS 156 / Advanced Systems
 # Last Modified: November 18, 2026
 # Purpose: Benchmark dataset definition and aggregation module. Indexes 565
 #          adversarial shell attack vectors and 154 benign developer control

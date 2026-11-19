@@ -1,7 +1,6 @@
 # ==============================================================================
 # Program: tests/test_policy_heldout_suite.py
 # Programmer: Ethan-da-Tech-Wizard
-# Course: CIS 156 / Advanced Systems
 # Last Modified: November 18, 2026
 # Purpose: Regression test suite for the 59-case held-out adversarial attack
 #          and 16-case benign control benchmark dataset across User and Launcher

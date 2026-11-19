@@ -1,7 +1,6 @@
 # ==============================================================================
 # Program: tests/test_engine.py
 # Programmer: Ethan-da-Tech-Wizard
-# Course: CIS 156 / Advanced Systems
 # Last Modified: November 18, 2026
 # Purpose: Unit tests for PolicyCommandGuard core engine and AST components.
 #          Validates pipeline splitting, quote context handling, executable

@@ -1,7 +1,6 @@
 # ==============================================================================
 # Program: policy_guard/engine.py
 # Programmer: Ethan-da-Tech-Wizard
-# Course: CIS 156 / Advanced Systems
 # Last Modified: November 18, 2026
 # Purpose: Core AST-aware shell command evaluation engine implementing zero-trust
 #          execution gating, quote-aware lexical pipeline splitting, executable

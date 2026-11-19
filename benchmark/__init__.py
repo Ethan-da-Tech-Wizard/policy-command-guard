@@ -1,7 +1,6 @@
 # ==============================================================================
 # Program: benchmark/__init__.py
 # Programmer: Ethan-da-Tech-Wizard
-# Course: CIS 156 / Advanced Systems
 # Last Modified: November 18, 2026
 # Purpose: Benchmark package initialization exposing benchmark datasets, primary
 #          and held-out attack suites, benign developer control datasets, and

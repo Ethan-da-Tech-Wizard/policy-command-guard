@@ -2,7 +2,6 @@
 # ==============================================================================
 # Program: benchmark/run_benchmark.py
 # Programmer: Ethan-da-Tech-Wizard
-# Course: CIS 156 / Advanced Systems
 # Last Modified: November 18, 2026
 # Purpose: Unified security benchmark runner evaluating the PolicyCommandGuard
 #          against 565 adversarial attack vectors and 154 benign developer

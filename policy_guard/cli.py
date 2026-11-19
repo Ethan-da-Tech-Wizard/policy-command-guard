@@ -2,7 +2,6 @@
 # ==============================================================================
 # Program: policy_guard/cli.py
 # Programmer: Ethan-da-Tech-Wizard
-# Course: CIS 156 / Advanced Systems
 # Last Modified: November 18, 2026
 # Purpose: Command-line interface for policy-as-code shell command evaluation.
 #          Accepts shell command strings via CLI arguments, evaluates them

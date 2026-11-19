@@ -1,7 +1,6 @@
 # ==============================================================================
 # Program: policy_guard/__init__.py
 # Programmer: Ethan-da-Tech-Wizard
-# Course: CIS 156 / Advanced Systems
 # Last Modified: November 18, 2026
 # Purpose: Package entrypoint exporting the public interface for the Policy-as-Code
 #          Shell Guard system. Exposes AST evaluators, decision enumerations,
