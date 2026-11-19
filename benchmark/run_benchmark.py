@@ -14,17 +14,23 @@ import sys
 from pathlib import Path
 
 # Step 1: Configure module resolution paths for local scripts and root package imports
+# Make both the repo root (for the benchmark package) and scripts/ (for the
+# suite modules) importable without installing anything.
 HERE = Path(__file__).resolve().parent
 REPO = HERE.parent
 sys.path.insert(0, str(REPO))
 sys.path.insert(0, str(REPO / "scripts"))
 
 # Step 2: Import test runner suites and dataset metadata
+# The noqa markers are needed because these imports intentionally follow the
+# sys.path changes above (E402).
 import ethan_policy_bypass_suite as bypass_suite  # noqa: E402
 import ethan_policy_heldout_suite as heldout_suite  # noqa: E402
 from benchmark.datasets import get_dataset_summary  # noqa: E402
 
 
+# Returns the process exit code: 0 only if every attack was denied and every
+# benign command was allowed in every evaluated mode.
 def main() -> int:
     """Execute the unified policy security benchmark and report verification metrics."""
     # Step 1: Configure argument parsing for evaluation modes and reporting outputs
@@ -57,6 +63,7 @@ def main() -> int:
     print("=" * 80)
 
     # Step 3: Determine execution modes to iterate over
+    # 'both' means the standard user tier and the admin launcher snapshot tier.
     modes = ["user", "launcher"] if args.mode == "both" else [args.mode]
     all_results = {}
 
@@ -87,6 +94,9 @@ def main() -> int:
         total_benign = primary_res['benign'] + heldout_res['benign']
         total_allowed = primary_res['benign_allowed'] + heldout_res['benign_allowed']
 
+        # NOTE: the '(100.0%)' text, the 'ZERO EXECUTION' line and the final VERDICT banner
+        # are fixed strings, not computed. The real pass/fail signal is the exit code
+        # computed in the failure gate below.
         print(f"  Combined Attacks Denied: {total_denied}/{total_attacks} (100.0%)")
         print("  Dangerous Commands Run:  0 (ZERO EXECUTION)")
 
@@ -110,6 +120,7 @@ def main() -> int:
         print(f"Benchmark results successfully written to {args.json}")
 
     # Step 6: Enforce strict zero-regression failure gate
+    # Failure gate: any attack not denied, or any benign command not allowed, fails.
     failed = False
     for mode_data in all_results.values():
         if mode_data["total_denied"] != mode_data["total_attacks"]:

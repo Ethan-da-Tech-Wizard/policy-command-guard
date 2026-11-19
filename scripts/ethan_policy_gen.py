@@ -31,19 +31,30 @@ import re
 import sys
 from pathlib import Path
 
+# Output file whose marked region this script regenerates; it sits next to the script.
 TOML = Path(__file__).resolve().parent / "ethan_gemini_policy.toml"
+# Marker lines delimit the generated region inside the TOML so hand-written rules
+# before and after it survive a --write run untouched.
 BEGIN = "# BEGIN GENERATED ALLOWLIST (scripts/ethan_policy_gen.py) - do not edit by hand"
 END = "# END GENERATED ALLOWLIST"
 
+# TOML array literal naming the shell tool, emitted verbatim as the rule's toolName.
 SH = '["run_shell_command", "ShellTool"]'
+# Single quote written as \x27 so patterns can live inside TOML single-quoted
+# (literal) strings, which cannot themselves contain a single quote.
 SQ = r"\x27"
 DQ = r'\\"'                      # JSON text of a double quote inside the command
 NUL = r"\x00"
+# Anchor for the beginning of the command value in the engine's stable-stringified
+# args (see module docstring): '{' NUL '"command":"'.
 START = r'^\{\x00"command":"'
 WEND = r'(?: |")'                # a command word ends at a space or at the end of the command value
 CMDEND = r'"\x00'
 
 # ---------------------------------------------------------------- command names
+# Allowlisted first words: read-only inspection plus workspace build/test tools.
+# Options of the riskier ones (sed, awk, find, git, tar, ...) are narrowed by the
+# per-command rules further down; this list only admits the command name.
 NAMES = ["ls", "cat", "head", "tail", "wc", "tree", "stat", "file", "pwd", "echo", "printf", "sort", "uniq", "cut", "tr",
          "nl", "diff", "cmp", "du", "df", "ps", "date", "whoami", "uname", "which", "basename", "dirname", "realpath",
          "sha256sum", "md5sum", "seq", "sleep", "true", "false", "nproc", "free", "uptime", "grep", "egrep", "fgrep", "rg",
@@ -51,17 +62,29 @@ NAMES = ["ls", "cat", "head", "tail", "wc", "tree", "stat", "file", "pwd", "echo
          "touch", "cp", "mv", "chmod", "pytest", "make", "npm", "nvidia-smi", r"scripts/ethan_capped_run\.sh"]
 NAME_ALT = "|".join(NAMES)
 ENVNAMES = "FOO|BAR|BAZ|LC_ALL|LANG|TZ|NO_COLOR|CI|PYTHONDONTWRITEBYTECODE|PYTHONUNBUFFERED"
+# Optional harmless environment-variable prefix (e.g. 'LANG=C ' or 'env CI=1 ');
+# only the names in ENVNAMES are accepted so LD_PRELOAD/PATH tricks are denied.
 ENVP = r"(?:(?:env |)(?:%s)=[A-Za-z0-9_.-]* |)" % ENVNAMES
+# A 'command position': start of the command value, or right after ' | ' / ' && '.
+# Per-command rules anchor on this so they apply to every pipeline stage.
 CP = r'(?:^\{\x00"command":"|\| |&& )' + ENVP      # a command position (start of the value or after a pipe / &&)
 
 # ---------------------------------------------------------------- paths
+# The workspace root: /home/<user>/workspace or /Users/<user>/workspace.
 WS = r"(?:home/[^/ \"\x27\\]+/workspace|Users/[^/ \"\x27\\]+/workspace)"
+# Absolute paths a command may mention: workspace, temp dirs, scratch, and a few
+# read-only system files. Any other absolute path is denied by the lexical gate.
 ABS_OK = (r"(?:" + WS + r"|tmp|private/tmp|var/folders|private/var/folders|mnt/GameDrive/twu_scratch)(?:[/ \"\x27\\]|$)"
           r"|etc(?:/(?:os-release|hostname|lsb-release)|)[ \"\x27\\]"
           r"|proc/(?:cpuinfo|meminfo|loadavg|version|uptime)[ \"\x27\\]|dev/null[ \"\x27\\]")
+# Top-level system directories; used to catch quoted absolute paths like '/etc/x'.
 ROOTD = r"(?:etc|root|home|var|usr|proc|sys|dev|opt|mnt|boot|bin|sbin|lib|lib64|srv|media|run|Users|Library|System|private|Volumes)(?:/|[ \"\x27\\])"
 TMPD = r"(?:tmp|private/tmp|var/folders|private/var/folders)"
+# '..' as a whole path component (not part of a name like 'a..b'), the
+# parent-directory traversal marker.
 DOTDOT = r"(?<![A-Za-z0-9_~^])\.\.(?![A-Za-z0-9_.])"
+# Alternation of credential/secret locations (dotenv files, SSH/cloud/browser stores,
+# token and key files, /proc process internals) that no command may name.
 SECRET_NAMES = (r"\.env(?:\.(?:local|production|prod|development|staging|secret|secrets)|)(?![A-Za-z0-9_.])|\.codex|\.pgpass|/etc/ssl/private|/etc/(?:passwd-|shadow|gshadow|sudoers|polkit-1|crypttab|ssh|wireguard|openvpn|"
                 r"NetworkManager/system-connections)|/proc/(?:[^ \"\x27\\]*/|)(?:environ|mem|maps|cmdline|root|cwd|fd|exe|stack|syscall|mountinfo)|"
                 r"\.mozilla|google-chrome|chromium|BraveSoftware|\.password-store|\.vault-token|\.local/share/keyrings|\.pypirc|"
@@ -69,12 +92,18 @@ SECRET_NAMES = (r"\.env(?:\.(?:local|production|prod|development|staging|secret|
                 r"\.git/config|\.git/credentials|(?<![A-Za-z0-9_.-])credentials(?:\.json|)[ \"\x27\\]|(?<![A-Za-z0-9_])tokens?\.(?:json|txt|yaml|yml)|"
                 r"(?<![A-Za-z0-9_])secrets?\.(?:json|ya?ml|toml|env)|\.ppk|\.pfx|\.kdbx|private[_-]?key|Login Data|"
                 r"(?<![A-Za-z0-9_])Cookies[ \"\x27\\]|\.config/[^ \"\x27\\]*(?:token|secret|credential|auth)|\.local/share/[^ \"\x27\\]*(?:token|secret|credential)")
+# ci() is used for protected names because macOS volumes are case-insensitive,
+# so 'agents.md' and 'AGENTS.md' are the same file there.
 def ci(word):
     """Case-insensitive literal (macOS volumes are case-insensitive by default)."""
     return "".join("[%s%s]" % (c.upper(), c.lower()) if c.isalpha() else re.escape(c) for c in word)
 
 
+# Characters that can terminate a path component inside the JSON text.
 _END = r"[ \"\x27\\]"
+# Protected paths that mutating commands and redirects must never touch: agent
+# instruction files, .git, shell startup files, credential dirs, service units and
+# the policy/guard files themselves (anti-tampering).
 PROT = ("(?:(?<![A-Za-z0-9_.-])(?:" + ci("AGENTS.md") + "|" + ci("CLAUDE.md") + "|" + ci("GEMINI.md") + "|" + ci(".gemini") + "(?:/|" + _END + ")|"
         + ci(".git") + "(?:/|" + _END + ")|" + ci(".codex") + "|" + ci(".claude") + "|"
         r"\.ssh|\.aws|\.gnupg|\.config|\.bashrc|\.bash_profile|\.profile|\.zshrc|\.zprofile|\.zshenv|\.pam_environment|\.xinitrc|"
@@ -85,6 +114,7 @@ PROT = ("(?:(?<![A-Za-z0-9_.-])(?:" + ci("AGENTS.md") + "|" + ci("CLAUDE.md") + 
         r"|[A-Za-z0-9_@-]+\.(?:service|timer|socket|path|mount|plist)(?:" + _END + r"|$)|systemd|LaunchAgents|LaunchDaemons)")
 
 
+# Wrap alternatives in a single non-capturing group.
 def lone(*alts):
     return "(?:" + "|".join(alts) + ")"
 
@@ -94,15 +124,21 @@ def opt(*alts):
     return "(?:" + "|".join(alts) + "|)"
 
 
+# Accumulates every rule in order; build_block() renders them to TOML.
 RULES = []   # (comment, toolName_toml, pattern, message)
 
 
+# All rules are deny rules. The replacement below confines '.*' to the current
+# value by excluding NUL, which ends every top-level value.
 def rule(comment, pattern, message, tool=SH):
     # `.*` must not run past the command value into description/dir_path text (false denies); NUL ends every value.
     RULES.append((comment, tool, pattern.replace(".*", r"[^\x00]*"), message))
 
 
 # ======================================================================= 0. shape + name allowlist
+# ======= Rule groups, in order: shape, lexical gate, paths, per-command arguments,
+# git, python -c, project tools, file tools. Each rule's first argument becomes
+# a comment in the generated TOML.
 rule("args must start with the command key (extra keys sorted before it would hide it from the anchored rules)",
      r'^(?!\{\x00"command":")', "Blocked: malformed shell call.")
 rule("first word must be an allowlisted read-only/workspace command",
@@ -118,9 +154,15 @@ rule("dir_path traversal", r'\x00"dir_path":"[^\x00]*' + DOTDOT, "Blocked: '..' 
 rule("command longer than 6000 characters", START + r"[^\x00]{6000}", "Blocked: command too long to check. Put the work in a script file in the workspace.")
 
 # ======================================================================= 1. quote-aware lexical gate
+# PL = a run of plain characters (no quotes, backslash or NUL); SEG = one quoted
+# piece followed by plain text. Unrolling SEG a fixed number of times replaces a
+# forbidden quantified group like (...)* (see module docstring).
 PL = r"[^\x27\"\\\x00]*"
 SEG = r"(?:\x27[^\x27\x00]*\x27" + PL + r"|\\\"[^\\\"\x00]*\\\"" + PL + r"|)"
 SCAN = START + r"(?!python3 -c )" + PL + SEG * 6
+# F = the forbidden-metacharacter alternatives checked in the unquoted portions:
+# command/process substitution, subshells, chaining, redirection, globs, '~',
+# comments, stray absolute paths and unbalanced quotes.
 F = lone(
     r"[;{}()`!<\x7f]",
     r"\\(?!\")",
@@ -140,6 +182,8 @@ F = lone(
 rule("shell metacharacters outside quotes (substitution, redirection, chaining, globs, unbalanced quotes) are denied; only ' | ', ' && ', 2>&1, >/dev/null and a final '> relative-file' are structural",
      SCAN + F,
      "Blocked: shell syntax that cannot be checked (substitution, subshell, redirection, ';', glob, unbalanced quote, etc.). Use one plain command, optionally joined with ' | ' or ' && '.")
+# More than six quoted pieces cannot be scanned by the unrolled grammar, so such
+# commands are denied outright rather than partially checked (fail closed).
 SEGF = r"(?:\x27[^\x27\x00]*\x27" + PL + r"|\\\"[^\\\"\x00]*\\\"" + PL + r")"
 rule("more than six quoted pieces cannot be scanned",
      START + r"(?!python3 -c )" + PL + SEGF * 6 + r"(?:\x27|\\\")",
@@ -152,6 +196,7 @@ rule("credential and secret paths (shell)", START + r".*(?:" + SECRET_NAMES + ")
      "Blocked: this path holds credentials or secrets. Ask Ethan to run this himself if it is really needed.")
 # 2026-11-02 (locate/read-my-files work): private data dirs are unreadable to the CLI by shell as well as file tools.
 # A directory component at the start of a value / after a space, quote, '=' , './' or the workspace root.
+# Names of private data directories the agent must never read.
 PRIVN = (r"(?:profile|business|grants|apply|backups|\.evidence|private|Company_Documents|receipts|invoices|clients|"
          r"\.stversions|exports|data/sessions|data/session_archive|data/malakopia)")
 PRIV = r"(?:^|[ \"=]|\./|workspace/)" + PRIVN + r"(?:/|\"|$)"
@@ -178,6 +223,7 @@ rule("mutating commands and redirects stay inside the workspace (no /tmp, no abs
      "Blocked: writes are limited to the workspace.")
 
 # ======================================================================= 3. per-command argument rules
+# Boundary after a flag: space, quote, '=' or end of value.
 FLAGW = r"(?: |\"|=|$)"
 rule("find: no -exec/-delete/-fprint family", CP + r"find .*(?<= )-(?:exec|execdir|ok|okdir|delete|fprint|fprint0|fprintf|fls)" + WEND,
      "Blocked: find with -delete/-exec or file output. Ask Ethan to run this himself if it is really needed.")
@@ -189,6 +235,7 @@ rule("file: no magic compile", CP + r"file .*(?<= )(?:-C|--compile)" + FLAGW, "B
 rule("rg: no preprocessor", CP + r"rg .*(?<= )--(?:pre|pre-glob|hostname-bin)" + FLAGW, "Blocked: rg option that runs a program.")
 rule("date: no clock setting", CP + r"date .*(?<= )(?:-s|--set)" + FLAGW, "Blocked: date option that changes the clock.")
 rule("sleep takes only seconds", CP + r"sleep(?! [0-9.]+" + WEND + ")", "Blocked: sleep takes only a number.")
+# Optional uniq flags: letters, or -f/-s/-w with a number.
 UF = r"(?: -[A-Za-z]+| -[fsw] [0-9]+|)"
 rule("uniq: at most one input operand, no output file",
      CP + r"uniq(?!" + UF * 3 + r"(?: [A-Za-z0-9_./-]+|)(?:\"| \| | && ))", "Blocked: uniq with an output file.")
@@ -223,6 +270,8 @@ rule("xargs: only read-only helpers",
      "Blocked: xargs may only run read-only helper commands.")
 
 # ---- sed: fixed safe script grammar
+# sed options and script grammar: only p/d line selection and simple s/// are
+# allowed, so the e, w and r commands (execute, write, read) cannot appear.
 SEDOPT = r"(?:-[nEri]+ |)"
 SED_SCRIPT = (r"(?:\x27(?:[0-9]+(?:,(?:[0-9]+|\$)|)[pd]|\$p|/[^/\x27;\\]*/[pd]|s/[^/\x27;\\]*/[^/\x27;\\]*/[gpIi0-9]*)\x27|s/[A-Za-z0-9_.-]*/[A-Za-z0-9_.-]*/[gpIi0-9]*|[0-9]+(?:,[0-9]+|)[pd])")
 rule("sed: options and script must match the safe grammar (no e/w/r commands)",
@@ -231,6 +280,8 @@ rule("sed: options and script must match the safe grammar (no e/w/r commands)",
 rule("sed: only known flags after the script", CP + r"sed .*(?<= )-(?![nEri]+" + WEND + ")", "Blocked: unsupported sed option.")
 
 # ---- awk: print-style programs only
+# awk bodies are limited to a character class without quotes, pipes or '>', so
+# programs cannot redirect or build shell commands.
 AWKBODY = r"[A-Za-z0-9_ $.,+*/%=!{}()\[\];:-]*"
 rule("awk: simple programs only (no system/getline/pipes/redirection/dq strings)",
      CP + r"awk(?! (?:-F(?: ?\x27[^\x27\x00]*\x27| ?[^ \x27\"\\-]+) |)\x27" + AWKBODY + r"\x27(?: [A-Za-z0-9_./ -]+|)(?:\"| \| | && ))",
@@ -245,6 +296,8 @@ rule("jq: no environment/input functions", CP + r"jq .*(?<![A-Za-z0-9_])(?:env|E
      "Blocked: jq function can read the environment or other files.")
 
 # ======================================================================= 4. git: fixed read-only subcommands and flags
+# Read-only git subcommands; everything else (push, fetch, checkout, config...)
+# is denied and the user is pointed to the guarded 'ethan git' wrapper.
 GIT_SUB = (r"(?:status|diff|log|show|blame|ls-files|rev-parse|rev-list|describe|shortlog|cat-file|ls-tree|diff-tree|name-rev|"
            r"show-ref|count-objects|merge-base|grep)")
 GIT_BR = r"branch" + opt(r" -a", r" -r", r" -v", r" -vv", r" --show-current", r" --list") * 3 + r"(?:\"| \| | && )"
@@ -252,6 +305,8 @@ GIT_TAG = r"tag(?: -l| --list|)(?:\"| \| | && )"
 rule("git: only read-only subcommands (no global options except '-C .')",
      CP + r"git(?! (?:-C \. |--no-pager |)(?:-C \. |--no-pager |)(?:" + GIT_SUB + WEND + "|" + GIT_BR + "|" + GIT_TAG + "))",
      "Blocked: this git command changes the repository or reaches the network. Use the ethan git guard commands instead.")
+# Flags accepted after the git subcommand: short option letters and a vetted list
+# of long options (no --output, --exec-path, -c, etc.).
 GIT_SHORT = (r"[0-9]+|C \.|[pslarvuhbzwiImtne]+|u(?:no|all|normal)|U[0-9]+|M|L|S[^ ]*|G[^ ]*")
 GIT_LONG = (r"no-pager|oneline|stat(?:=[0-9,]+|)|name-only|name-status|short|porcelain(?:=v[12]|)|branch|shortstat|numstat|summary|no-color|color|graph|"
             r"decorate|all|follow|cached|staged|no-merges|merges|reverse|abbrev-commit|abbrev=[0-9]+|relative|first-parent|topo-order|date-order|"
@@ -266,10 +321,14 @@ rule("git: only whitelisted flags (no -c, --output, --exec-path, --no-index, --e
 rule("git: arguments must not be URLs or remotes", CP + r"git .*(?::\/\/|git@|ssh:)", "Blocked: git network access.")
 
 # ======================================================================= 5. python
+# Character classes for the strict python -c one-liner grammar (file names / keys).
 PYPATH = r"[A-Za-z0-9_\u00a1-\uffff][A-Za-z0-9_./\u00a1-\uffff-]*"
 PYKEY = r"[A-Za-z0-9_ \u00a1-\uffff-]+"
 
 
+# pygroups() builds the pieces of the permitted python -c one-liners for one
+# quoting style (q) and newline spelling (nl), because quoting inside the
+# JSON-escaped command differs between a dq-wrapped and sq-wrapped body.
 def pygroups(q, nl):
     """Python-source regex groups {selector: alternatives}; q is the regex for ONE python quote character, nl for a python '\\n'.
     One deny rule per group keeps every pattern under Gemini's 2048-character limit."""
@@ -298,6 +357,7 @@ def pygroups(q, nl):
     }
 
 
+# How a python quote character appears inside the JSON text, for each wrapping style.
 Q_A = r"\x27"                                  # python quote inside a dq-wrapped body
 Q_B = r"(?:\x27\\\"\x27\\\"\x27)"              # python quote inside a sq-wrapped body:  '"'"'
 NL = r"\\\\n"                                  # python \n (backslash n) as JSON text (backslash is doubled)
@@ -323,6 +383,7 @@ rule("running guard scripts: only the guarded git subcommands",
      "Blocked: guard and policy scripts cannot be run from the model.")
 
 # ---- knowledge index (scripts/ethan_know.py): read-only subcommands only; build (writes data/knowledge/) is never reachable.
+# Argument grammar for the project knowledge-search tool (ethan_know.py).
 KQ = r"(?:\x27[^\x27\x00]*\x27|\\\"[^\\\"\x00]*\\\"|[A-Za-z0-9_.-]+)"
 KOPT = opt(r" --class (?:code|docs|research|policy|lesson|failure|license)", r" --k [0-9]+", r" --json") * 3
 rule("ethan_know.py: only read-only search/answer-pack/stats/verify/freshness (build and any other mention of the file are denied)",
@@ -341,9 +402,11 @@ rule("ethan_split.py: only status/plan/copy-code/copy-vault/verify/report and cl
      "Blocked: the split tool may only be run as 'python3 scripts/ethan_split.py status|classify [PATH]|plan|copy-code|copy-vault|verify|report'. It copies; it never moves or deletes.")
 
 # ======================================================================= 6. file tools
+# Tool-name lists for file tools; read tools and write tools get different rules.
 FT = '["read_file", "read_many_files", "list_directory", "glob", "search_file_content", "grep_search", "write_file", "replace"]'
 READ_T = '["read_file", "read_many_files", "list_directory", "glob", "search_file_content", "grep_search"]'
 WRITE_T = '["write_file", "replace"]'
+# The only absolute paths file tools may use (workspace, temp, a few system files).
 FT_ABS = (r"/(?:" + WS + r"|" + TMPD + r"|mnt/GameDrive/twu_scratch)(?:/|\")|/etc/(?:os-release|hostname|lsb-release)\"|/proc/(?:cpuinfo|meminfo|loadavg|version|uptime)\"")
 rule("read tools: path keys must be workspace-relative or an allowed absolute path",
      r'\x00"(?:file_path|dir_path|path)":"(?!' + FT_ABS + r")[/~$\\]", "Blocked: path outside the workspace.", READ_T)
@@ -364,6 +427,10 @@ rule("write tools: protected targets", r'\x00"file_path":"[^"\x00]*' + PROT,
 rule("model memory persistence", r"", "Blocked: persistent memory writes are not allowed from the local model.", '["save_memory"]')
 
 
+# build_block() renders RULES as TOML [[rule]] tables. Before emitting, each pattern
+# is asserted to satisfy the engine's limits (no single quote, under 2048 chars,
+# not rejected by isSafeRegExp), so a bad rule fails here instead of at runtime.
+# Deny rules get priority 900, above the final allow-all rule at 800.
 def build_block():
     out = [BEGIN, "# Primary control: deny-only negative lookaheads (see scripts/ethan_policy_gen.py docstring).",
            '# Guarded git commands the grammar allows: "ethan git status" "ethan git begin" "ethan git stage" "ethan git verify" "ethan git finish" "ethan git undo-last"', ""]
@@ -395,6 +462,8 @@ def build_block():
     return "\n".join(out) + "\n"
 
 
+# Exit status in --check mode is the CI signal: 0 means the checked-in TOML equals
+# what this generator would produce.
 def main(argv):
     """Parse generation options and splice rules into ethan_gemini_policy.toml."""
     # Step 1: Compile the raw allowlist and deny rule blocks
