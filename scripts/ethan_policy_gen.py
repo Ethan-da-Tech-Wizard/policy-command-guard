@@ -116,6 +116,7 @@ PROT = ("(?:(?<![A-Za-z0-9_.-])(?:" + ci("AGENTS.md") + "|" + ci("CLAUDE.md") + 
 
 # Wrap alternatives in a single non-capturing group.
 def lone(*alts):
+    """Join regex alternatives into one non-capturing group: lone("a", "b") -> "(?:a|b)"."""
     return "(?:" + "|".join(alts) + ")"
 
 
@@ -131,6 +132,18 @@ RULES = []   # (comment, toolName_toml, pattern, message)
 # All rules are deny rules. The replacement below confines '.*' to the current
 # value by excluding NUL, which ends every top-level value.
 def rule(comment, pattern, message, tool=SH):
+    """Register one deny rule.
+
+    Args:
+        comment: Short label; becomes the `# ...` line above the [[rule]] table in the TOML.
+        pattern: Regex matched against the JSON-encoded tool arguments. An empty string means
+            "deny every call to this tool".
+        message: Text shown to the model when the rule blocks a call.
+        tool: TOML toolName value (a quoted name or a list literal); defaults to the shell tool.
+
+    Side effects:
+        Appends to the module-level RULES list; order is preserved in the generated file.
+    """
     # `.*` must not run past the command value into description/dir_path text (false denies); NUL ends every value.
     RULES.append((comment, tool, pattern.replace(".*", r"[^\x00]*"), message))
 
@@ -432,6 +445,15 @@ rule("model memory persistence", r"", "Blocked: persistent memory writes are not
 # not rejected by isSafeRegExp), so a bad rule fails here instead of at runtime.
 # Deny rules get priority 900, above the final allow-all rule at 800.
 def build_block():
+    """Render RULES (plus the final allow-all shell rule) as the TOML text between BEGIN and END.
+
+    Returns:
+        The generated block as a string ending in a newline.
+
+    Raises:
+        AssertionError: If a pattern contains a single quote (TOML literal-string delimiter), is
+            2048+ characters, or has a nested quantifier that Gemini's isSafeRegExp would reject.
+    """
     out = [BEGIN, "# Primary control: deny-only negative lookaheads (see scripts/ethan_policy_gen.py docstring).",
            '# Guarded git commands the grammar allows: "ethan git status" "ethan git begin" "ethan git stage" "ethan git verify" "ethan git finish" "ethan git undo-last"', ""]
     for comment, tool, pat, msg in RULES:
@@ -465,7 +487,17 @@ def build_block():
 # Exit status in --check mode is the CI signal: 0 means the checked-in TOML equals
 # what this generator would produce.
 def main(argv):
-    """Parse generation options and splice rules into ethan_gemini_policy.toml."""
+    """Parse generation options and splice rules into ethan_gemini_policy.toml.
+
+    Args:
+        argv: Command-line arguments without the program name. `--check` exits 0 only if the
+            checked-in TOML already equals the generated output (used by CI); `--write` rewrites the
+            file; with neither flag the generated block is printed to stdout.
+
+    Raises:
+        SystemExit: Exit status 1 for a failed --check, or a message if the BEGIN/END markers are
+            missing when --write is requested.
+    """
     # Step 1: Compile the raw allowlist and deny rule blocks
     block = build_block()
 
