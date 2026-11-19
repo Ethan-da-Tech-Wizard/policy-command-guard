@@ -1,3 +1,4 @@
+# Python bytecode, tool caches (pytest, coverage) and build output: all regenerated, never committed.
 __pycache__/
 *.py[cod]
 *$py.class
@@ -9,9 +10,12 @@ dist/
 build/
 *.egg-info/
 .venv/
+# Virtual environments are machine-specific. `node_modules/` and `package-lock.json` are ignored because this
+# repo has no JavaScript dependencies; they only appear if a local tool installs something by accident.
 venv/
 node_modules/
 package-lock.json
+# Editor/tool backup and temp files, plus macOS Finder metadata (.DS_Store).
 *.bak
 *.tmp
 .DS_Store
