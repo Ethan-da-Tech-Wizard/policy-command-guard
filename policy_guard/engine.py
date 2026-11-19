@@ -377,12 +377,18 @@ class PolicyCommandGuard:
        segment fails, the entire pipeline is denied.
     """
 
+    # Constructor arguments are stored on the instance. Note: evaluate_shell_command
+    # currently decides from its built-in checks and the module-level
+    # ALLOWLISTED_INSPECTION_COMMANDS; self.rules, self.workspace_dir and self.tier
+    # are not read by it (observation only; behaviour is unchanged by this comment).
     def __init__(
         self,
         rules: Optional[Sequence[PolicyRule]] = None,
         workspace_dir: Optional[str] = None,
         tier: PolicyTier = PolicyTier.ADMIN,
     ) -> None:
+        # Defaults: no rules, the process CWD as workspace root, and the
+        # (admin) tier, the highest-precedence layer.
         # Step 1: Store policy rules, workspace root, and active enforcement tier
         self.rules = list(rules or [])
         self.workspace_dir = workspace_dir or os.getcwd()
