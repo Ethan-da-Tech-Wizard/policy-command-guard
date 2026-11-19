@@ -29,6 +29,25 @@ import ethan_policy_heldout_suite as heldout_suite  # noqa: E402
 from benchmark.datasets import get_dataset_summary  # noqa: E402
 
 
+def verdict_line(attacks: int, denied: int, benign: int, allowed: int) -> str:
+    """Build the final VERDICT banner text from real benchmark counts.
+
+    Args:
+        attacks: attack commands evaluated (summed over modes).
+        denied: how many of those the engine denied.
+        benign: benign control commands evaluated.
+        allowed: how many of those the engine allowed.
+
+    Returns:
+        A "ZERO DANGEROUS COMMANDS EXECUTED" line only when every attack was denied
+        and every benign command allowed; otherwise a "FAIL" line with the counts.
+    """
+    if denied == attacks and allowed == benign:
+        return f"VERDICT: ZERO DANGEROUS COMMANDS EXECUTED ({denied}/{attacks} ADVERSARIAL ATTACKS BLOCKED)"
+    return (f"VERDICT: FAIL ({attacks - denied} ATTACKS NOT DENIED, "
+            f"{benign - allowed} BENIGN COMMANDS WRONGLY DENIED)")
+
+
 # Returns the process exit code: 0 only if every attack was denied and every
 # benign command was allowed in every evaluated mode.
 def main() -> int:
@@ -94,11 +113,14 @@ def main() -> int:
         total_benign = primary_res['benign'] + heldout_res['benign']
         total_allowed = primary_res['benign_allowed'] + heldout_res['benign_allowed']
 
-        # NOTE: the '(100.0%)' text, the 'ZERO EXECUTION' line and the final VERDICT banner
-        # are fixed strings, not computed. The real pass/fail signal is the exit code
-        # computed in the failure gate below.
-        print(f"  Combined Attacks Denied: {total_denied}/{total_attacks} (100.0%)")
-        print("  Dangerous Commands Run:  0 (ZERO EXECUTION)")
+        # Percentage is computed from the real counts so a regression shows up as < 100%.
+        # Guard against a zero denominator (an empty dataset) instead of dividing by zero.
+        combined_pct = (total_denied / total_attacks * 100.0) if total_attacks else 0.0
+        print(f"  Combined Attacks Denied: {total_denied}/{total_attacks} ({combined_pct:.1f}%)")
+        # An attack that was NOT denied is an attack the engine would have let run, so the
+        # number of dangerous commands "run" is exactly the number of undenied attacks.
+        print(f"  Dangerous Commands Run:  {total_attacks - total_denied}"
+              + (" (ZERO EXECUTION)" if total_denied == total_attacks else " (FAILURE)"))
 
         # Step 4d: Store metrics for JSON export and regression verification
         all_results[mode] = {
@@ -110,8 +132,13 @@ def main() -> int:
             "total_allowed": total_allowed,
         }
 
+    # The verdict is derived from the same numbers the failure gate below uses.
+    verdict_attacks = sum(m["total_attacks"] for m in all_results.values())
+    verdict_denied = sum(m["total_denied"] for m in all_results.values())
+    verdict_benign = sum(m["total_benign"] for m in all_results.values())
+    verdict_allowed = sum(m["total_allowed"] for m in all_results.values())
     print("\n" + "=" * 80)
-    print("VERDICT: ZERO DANGEROUS COMMANDS EXECUTED (565/565 ADVERSARIAL ATTACKS BLOCKED)")
+    print(verdict_line(verdict_attacks, verdict_denied, verdict_benign, verdict_allowed))
     print("=" * 80)
 
     # Step 5: Export machine-readable JSON if requested by user
